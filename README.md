@@ -5,9 +5,10 @@ Official OpenClaw channel plugin for sending and receiving WhatsApp messages thr
 ## Install
 
 ```bash
-npm install @kapso/openclaw-whatsapp
-openclaw plugins add @kapso/openclaw-whatsapp
+openclaw plugins install clawhub:@kapso/openclaw-whatsapp
 ```
+
+OpenClaw resolves the package from ClawHub and installs runtime dependencies declared in `package.json`, including `@kapso/whatsapp-cloud-api`. You do not need to run a separate `npm install` for this plugin.
 
 ## Configuration
 
@@ -50,13 +51,15 @@ Plain E.164 or digits-only numbers are also accepted.
 
 ## Publishing
 
-Before publishing to npm or ClawHub:
+Before publishing to ClawHub:
 
 ```bash
 npm run build
 npm test
 npm run plugin:validate
-clawhub package publish . --dry-run
+npx -y clawhub@latest package publish . --family code-plugin --owner kapso --dry-run
 ```
 
 ClawHub requires the package scope to match the selected owner.
+
+This package does not need to be published to npm unless you explicitly want npm fallback installs. ClawHub is the primary distribution path for OpenClaw plugins.
