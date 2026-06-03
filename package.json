@@ -1,0 +1,75 @@
+{
+  "name": "@kapso/openclaw-whatsapp",
+  "version": "0.1.0",
+  "description": "Official Kapso WhatsApp channel plugin for OpenClaw.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./setup-entry": {
+      "types": "./dist/setup-entry.d.ts",
+      "import": "./dist/setup-entry.js"
+    }
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "plugin:build": "npm run build && npm pack --dry-run",
+    "plugin:validate": "npm run build && npm test && npm pack --dry-run",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.27"
+  },
+  "dependencies": {
+    "@kapso/whatsapp-cloud-api": "^0.2.1",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "openclaw": "2026.5.28",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.8"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "setupEntry": "./src/setup-entry.ts",
+    "runtimeSetupEntry": "./dist/setup-entry.js",
+    "channel": {
+      "id": "kapso-whatsapp",
+      "label": "Kapso WhatsApp",
+      "selectionLabel": "WhatsApp via Kapso",
+      "docsPath": "https://docs.kapso.ai",
+      "aliases": [
+        "kapso",
+        "whatsapp",
+        "wa"
+      ],
+      "blurb": "Send and receive WhatsApp messages through Kapso."
+    },
+    "compat": {
+      "pluginApi": ">=2026.5.27"
+    },
+    "build": {
+      "openclawVersion": "2026.5.28"
+    }
+  }
+}
