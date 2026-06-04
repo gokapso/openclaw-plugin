@@ -9,11 +9,13 @@ import { kapsoWhatsappPlugin } from "./channel.js";
 import {
   inspectKapsoAccount,
   listKapsoAccountIds,
+  normalizeWebhookPath,
   resolveDefaultKapsoAccountId,
   resolveKapsoAccount
 } from "./config.js";
 import type { ResolvedKapsoAccount } from "./config.js";
 import { registerKapsoWebhookRoutes } from "./http.js";
+import { KAPSO_MESSAGE_RECEIVED_EVENT } from "./webhook.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const KAPSO_CLI_PACKAGE_PATH = "@kapso/cli/package.json";
@@ -107,6 +109,15 @@ type DoctorAccount = {
   webhookSecretStatus: string;
   dmSecurity: ResolvedKapsoAccount["dmSecurity"];
   allowFromCount: number;
+  webhookRegistration: DoctorWebhookRegistration;
+};
+
+type DoctorWebhookRegistration = {
+  status: "ok" | "missing" | "skipped" | "failed";
+  method?: "api";
+  webhookId?: string;
+  url?: string;
+  detail?: string;
 };
 
 type DoctorReport = {
@@ -165,7 +176,7 @@ type SetupReport = {
 };
 
 async function buildDoctorReport(config: OpenClawConfig): Promise<DoctorReport> {
-  const accounts = listKapsoAccountIds(config).map((accountId) => {
+  const accounts = await Promise.all(listKapsoAccountIds(config).map(async (accountId) => {
     const account = resolveKapsoAccount(config, accountId);
     const details = inspectKapsoAccount(config, accountId);
     return {
@@ -177,9 +188,10 @@ async function buildDoctorReport(config: OpenClawConfig): Promise<DoctorReport> 
       apiKeyStatus: String(details.apiKeyStatus),
       webhookSecretStatus: String(details.webhookSecretStatus),
       dmSecurity: account.dmSecurity,
-      allowFromCount: account.allowFrom.length
+      allowFromCount: account.allowFrom.length,
+      webhookRegistration: await checkWebhookRegistration(account)
     };
-  });
+  }));
 
   return {
     channelId: CHANNEL_ID,
@@ -305,6 +317,171 @@ async function probeKapsoStatus(): Promise<Pick<SetupReport["kapsoCli"], "status
   if (result.error) return { status: "skipped", statusDetail: result.error.message };
   if (result.status === 0) return { status: "ok" };
   return { status: "failed", statusDetail: stderrOrStdout(result) || `kapso status exited with ${result.status}` };
+}
+
+type KapsoWebhookSummary = {
+  id?: string;
+  url?: string;
+  active?: boolean;
+  events: string[];
+  kind?: string;
+};
+
+async function checkWebhookRegistration(account: ResolvedKapsoAccount): Promise<DoctorWebhookRegistration> {
+  if (!account.phoneNumberId) {
+    return {
+      status: "skipped",
+      detail: "phoneNumberId is missing"
+    };
+  }
+  if (!account.apiKey) {
+    return {
+      status: "skipped",
+      detail: "apiKey is missing, so doctor cannot query Kapso webhooks"
+    };
+  }
+
+  const result = await listWebhooksWithApi({
+    apiKey: account.apiKey,
+    baseUrl: account.baseUrl,
+    phoneNumberId: account.phoneNumberId
+  });
+  if (result.error) {
+    return {
+      status: "failed",
+      method: "api",
+      detail: result.error
+    };
+  }
+
+  const matching = result.webhooks.find((webhook) => {
+    return webhook.active === true &&
+      webhook.events.includes(KAPSO_MESSAGE_RECEIVED_EVENT) &&
+      Boolean(webhook.url && sameWebhookPath(webhook.url, account.webhookPath));
+  });
+
+  if (matching) {
+    return {
+      status: "ok",
+      method: "api",
+      webhookId: matching.id,
+      url: matching.url,
+      detail: `active ${KAPSO_MESSAGE_RECEIVED_EVENT} webhook matches ${account.webhookPath}`
+    };
+  }
+
+  const activeReceived = result.webhooks.find((webhook) => {
+    return webhook.active === true && webhook.events.includes(KAPSO_MESSAGE_RECEIVED_EVENT);
+  });
+
+  return {
+    status: "missing",
+    method: "api",
+    webhookId: activeReceived?.id,
+    url: activeReceived?.url,
+    detail: activeReceived?.url
+      ? `active ${KAPSO_MESSAGE_RECEIVED_EVENT} webhook exists, but its URL path does not match ${account.webhookPath}`
+      : `no active ${KAPSO_MESSAGE_RECEIVED_EVENT} webhook found for this phoneNumberId`
+  };
+}
+
+async function listWebhooksWithApi(params: {
+  apiKey: string;
+  baseUrl: string;
+  phoneNumberId: string;
+}): Promise<{ webhooks: KapsoWebhookSummary[]; error?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+
+  try {
+    const url = new URL(
+      `${normalizeKapsoPlatformBaseUrl(params.baseUrl)}/platform/v1/whatsapp/phone_numbers/${encodeURIComponent(params.phoneNumberId)}/webhooks`
+    );
+    url.searchParams.set("per_page", "100");
+
+    const response = await fetch(url, {
+      headers: {
+        "X-API-Key": params.apiKey
+      },
+      signal: controller.signal
+    });
+    const text = await response.text();
+    const parsed = parseJson(text);
+
+    if (!response.ok) {
+      return {
+        webhooks: [],
+        error: text || `Kapso API returned HTTP ${response.status}`
+      };
+    }
+
+    return {
+      webhooks: readWebhookList(parsed)
+    };
+  } catch (error) {
+    return {
+      webhooks: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function readWebhookList(value: unknown): KapsoWebhookSummary[] {
+  const direct = Array.isArray(value) ? value : undefined;
+  const nested = readRecordValue(value, "data", "webhooks", "whatsapp_webhooks", "whatsappWebhooks");
+  const source = direct ?? (Array.isArray(nested) ? nested : []);
+  return source.map(readWebhookSummary).filter((webhook): webhook is KapsoWebhookSummary => Boolean(webhook));
+}
+
+function readWebhookSummary(value: unknown): KapsoWebhookSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const url = readCliString(readRecordValue(value, "url"));
+  const events = readStringArray(readRecordValue(value, "events", "event_names", "eventNames"));
+  return {
+    id: readCliString(readRecordValue(value, "id", "webhook_id", "webhookId")),
+    url,
+    active: readBoolean(readRecordValue(value, "active")),
+    events,
+    kind: readCliString(readRecordValue(value, "kind"))
+  };
+}
+
+function sameWebhookPath(rawUrl: string, expectedPath: string): boolean {
+  const actualPath = pathFromUrl(rawUrl);
+  if (!actualPath) return false;
+  return normalizePathForComparison(actualPath) === normalizePathForComparison(expectedPath);
+}
+
+function normalizePathForComparison(path: string): string {
+  const normalized = normalizeWebhookPath(path);
+  return normalized.length > 1 ? normalized.replace(/\/+$/, "") : normalized;
+}
+
+function readRecordValue(value: unknown, ...keys: string[]): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key];
+  }
+  return undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(readCliString).filter((entry): entry is string => Boolean(entry));
+  }
+  const text = readCliString(value);
+  return text ? text.split(",").map((entry) => entry.trim()).filter(Boolean) : [];
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  const text = readCliString(value)?.toLowerCase();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  return undefined;
 }
 
 async function resolveKapsoPhoneNumber(phoneNumber: string): Promise<{ phoneNumberId?: string; error?: string }> {
@@ -572,24 +749,33 @@ function buildSetupNextSteps(params: {
 
 function buildNextSteps(accounts: DoctorAccount[]): string[] {
   const steps = [];
-  const account = accounts[0];
 
-  if (!account) {
+  if (accounts.length === 0) {
     steps.push(`Enable the channel with: openclaw config set 'channels["${CHANNEL_ID}"].enabled' true --strict-json`);
     return steps;
   }
 
-  if (!account.configured) {
-    steps.push("Configure apiKey and phoneNumberId for the channel.");
-  }
-  if (account.webhookSecretStatus !== "available") {
-    steps.push("Configure webhookSecret so Kapso webhook signatures can be verified.");
-  }
-  if (account.dmSecurity === "allowlist" && account.allowFromCount === 0) {
-    steps.push("Add allowed senders with allowFrom, or intentionally set dmSecurity to open.");
-  }
+  for (const account of accounts) {
+    const prefix = accounts.length > 1 ? `Account ${account.accountId}: ` : "";
+    if (!account.enabled) {
+      steps.push(`${prefix}Enable the channel account.`);
+    }
+    if (!account.configured) {
+      steps.push(`${prefix}Configure apiKey and phoneNumberId for the channel.`);
+    }
+    if (account.webhookSecretStatus !== "available") {
+      steps.push(`${prefix}Configure webhookSecret so Kapso webhook signatures can be verified.`);
+    }
+    if (account.dmSecurity === "allowlist" && account.allowFromCount === 0) {
+      steps.push(`${prefix}Add allowed senders with allowFrom, or intentionally set dmSecurity to open.`);
+    }
 
-  steps.push(`Register a phone-number webhook for whatsapp.message.received at https://<public-gateway>${account.webhookPath}.`);
+    if (account.webhookRegistration.status === "missing") {
+      steps.push(`${prefix}Register a phone-number webhook for ${KAPSO_MESSAGE_RECEIVED_EVENT} at https://<public-gateway>${account.webhookPath}.`);
+    } else if (account.webhookRegistration.status === "failed") {
+      steps.push(`${prefix}Could not verify Kapso webhook registration: ${account.webhookRegistration.detail ?? "unknown error"}.`);
+    }
+  }
   return steps;
 }
 
@@ -628,6 +814,7 @@ function printSetupReport(report: SetupReport): void {
 function printDoctorReport(report: DoctorReport): void {
   console.log("Kapso WhatsApp doctor");
   console.log(`Channel: ${report.channelId}`);
+  console.log(`Status: ${isDoctorReady(report) ? "OK - ready to receive WhatsApp messages" : "Needs attention"}`);
   console.log(`Kapso CLI: ${formatKapsoCliStatus(report.kapsoCli)}`);
   if (report.kapsoCli.error && !report.kapsoCli.installed) console.log(`Kapso CLI detail: ${report.kapsoCli.error}`);
   console.log("");
@@ -642,13 +829,38 @@ function printDoctorReport(report: DoctorReport): void {
     console.log(`  webhookPath: ${account.webhookPath}`);
     console.log(`  dmSecurity: ${account.dmSecurity}`);
     console.log(`  allowFrom: ${account.allowFromCount}`);
+    console.log(`  webhookRegistration: ${formatWebhookRegistration(account.webhookRegistration)}`);
   }
 
   if (report.nextSteps.length > 0) {
     console.log("");
     console.log("Next steps:");
     for (const step of report.nextSteps) console.log(`  - ${step}`);
+  } else {
+    console.log("");
+    console.log("No next steps. Kapso WhatsApp is ready to use with OpenClaw.");
   }
+}
+
+function isDoctorReady(report: DoctorReport): boolean {
+  return report.accounts.length > 0 && report.accounts.every((account) => {
+    return account.enabled &&
+      account.configured &&
+      account.webhookSecretStatus === "available" &&
+      account.webhookRegistration.status === "ok" &&
+      (account.dmSecurity !== "allowlist" || account.allowFromCount > 0);
+  });
+}
+
+function formatWebhookRegistration(registration: DoctorWebhookRegistration): string {
+  const parts = [
+    registration.status,
+    registration.method ? `via ${registration.method}` : undefined,
+    registration.webhookId ? `id=${registration.webhookId}` : undefined,
+    registration.url ? `url=${registration.url}` : undefined
+  ].filter(Boolean);
+  const prefix = parts.join(" ");
+  return registration.detail ? `${prefix} (${registration.detail})` : prefix;
 }
 
 function formatKapsoCliStatus(kapsoCli: DoctorReport["kapsoCli"]): string {
@@ -829,7 +1041,9 @@ function readCliString(value: unknown): string | undefined {
 function normalizeKapsoPlatformBaseUrl(value: string | undefined): string {
   const trimmed = value?.trim().replace(/\/+$/, "");
   if (!trimmed) return "https://api.kapso.ai";
-  return trimmed.replace(/\/platform\/v1$/, "");
+  return trimmed
+    .replace(/\/platform\/v1$/, "")
+    .replace(/\/meta\/whatsapp$/, "");
 }
 
 function pathFromUrl(value: string): string | undefined {

@@ -4,7 +4,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { CHANNEL_ID } from "./constants.js";
 import { resolveKapsoAccount } from "./config.js";
 import { sendKapsoText } from "./outbound.js";
-import { normalizeWhatsAppTarget } from "./targets.js";
+import { normalizeWhatsAppTarget, whatsAppTargetsEquivalent } from "./targets.js";
 import {
   KAPSO_MESSAGE_RECEIVED_EVENT,
   normalizeKapsoWebhook,
@@ -16,6 +16,7 @@ describe("Kapso OpenClaw plugin", () => {
     expect(normalizeWhatsAppTarget("wa:+1 (555) 123-4567")).toBe("+15551234567");
     expect(normalizeWhatsAppTarget("kapso-whatsapp: 15551234567")).toBe("15551234567");
     expect(normalizeWhatsAppTarget("not-a-phone")).toBeUndefined();
+    expect(whatsAppTargetsEquivalent("+56975746426", "56975746426")).toBe(true);
   });
 
   it("resolves env-backed account configuration", () => {

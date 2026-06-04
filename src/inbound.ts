@@ -4,6 +4,7 @@ import type { ReplyPayload } from "openclaw/plugin-sdk/core";
 import { createMessageReceiptFromOutboundResults } from "openclaw/plugin-sdk/channel-outbound";
 import { CHANNEL_ID } from "./constants.js";
 import type { ResolvedKapsoAccount } from "./config.js";
+import { whatsAppTargetsEquivalent } from "./targets.js";
 import type { KapsoInboundEvent } from "./webhook.js";
 import { sendKapsoMedia, sendKapsoText, toOutboundDeliveryResult } from "./outbound.js";
 
@@ -196,10 +197,14 @@ function resolveAdmission(account: ResolvedKapsoAccount, from: string) {
   if (account.dmSecurity === "disabled") {
     return { kind: "drop" as const, reason: "kapso DM ingress disabled", recordHistory: false };
   }
-  if (account.dmSecurity === "allowlist" && account.allowFrom.length > 0 && !account.allowFrom.includes(from)) {
+  if (account.dmSecurity === "allowlist" && account.allowFrom.length > 0 && !isAllowedSender(account.allowFrom, from)) {
     return { kind: "drop" as const, reason: "sender is not in kapso allowFrom", recordHistory: false };
   }
   return undefined;
+}
+
+function isAllowedSender(allowFrom: string[], from: string): boolean {
+  return allowFrom.some((entry) => entry === from || whatsAppTargetsEquivalent(entry, from));
 }
 
 function createInboundDeliveryAdapter(cfg: OpenClawConfig, account: ResolvedKapsoAccount, event: KapsoInboundEvent) {

@@ -46,17 +46,40 @@ openclaw skills list | grep kapso
 openclaw skills info kapso-whatsapp-setup
 ```
 
-After you create the Kapso API key and configure it on the server yourself, paste something like this into OpenClaw:
+Before asking the agent to finish setup, do the interactive and secret-bearing steps yourself:
+
+```bash
+openclaw kapso-whatsapp cli login
+openclaw kapso-whatsapp cli status
+openclaw config set 'channels["kapso-whatsapp"].apiKey' '"kapso_..."' --strict-json
+```
+
+For maximum visibility while the agent works, use the browser dashboard and keep the Activity tab open:
+
+```bash
+openclaw dashboard
+```
+
+If you prefer the terminal UI, start `openclaw tui` and send these slash commands before the setup prompt:
+
+```text
+/verbose full
+/trace on
+/tools verbose
+```
+
+After that, paste something like this into OpenClaw:
 
 ```text
 Use the kapso-whatsapp-setup skill to finish my Kapso WhatsApp OpenClaw setup.
 
 I already configured my Kapso API key on this server.
+I already ran openclaw kapso-whatsapp cli login successfully.
 Default outbound recipient: +15551234567
 Public gateway: discover it if possible. I am using Tailscale Funnel on this machine.
 Kapso WhatsApp sender number: discover it with the Kapso CLI. If there is more than one available number, ask me which one to use.
 
-Please verify the Kapso CLI and @kapso/openclaw-whatsapp plugin are installed, discover the public webhook URL, resolve the phone_number_id, generate a webhook secret, register the Kapso phone-number webhook for whatsapp.message.received, write the OpenClaw channel config, set the default outbound recipient, run diagnostics, and tell me exactly what remains manual.
+Please verify the Kapso CLI and @kapso/openclaw-whatsapp plugin are installed, but do not run interactive login. Discover the public webhook URL, resolve the phone_number_id, generate a webhook secret, register the Kapso phone-number webhook for whatsapp.message.received, write the OpenClaw channel config, set the default outbound recipient, run diagnostics, and tell me exactly what remains manual.
 ```
 
 If you already know the public webhook URL, replace the gateway line with:
@@ -77,7 +100,7 @@ If you already know the Kapso/Meta number ID, replace the sender-number line wit
 Kapso/Meta phone_number_id: 1234567890
 ```
 
-If the Kapso CLI is not logged in, the agent may ask you to run `openclaw kapso-whatsapp cli login` once in the terminal. If it cannot discover the public HTTPS URL from the gateway or tunnel service, it should ask you for that URL rather than guessing.
+If the Kapso CLI is not logged in, the agent should stop and ask you to run `openclaw kapso-whatsapp cli login` in the terminal. If it cannot discover the public HTTPS URL from the gateway or tunnel service, it should ask you for that URL rather than guessing.
 
 ## Configure
 
@@ -98,8 +121,10 @@ openclaw config set 'channels["kapso-whatsapp"].baseUrl' '"https://api.kapso.ai/
 openclaw config set 'channels["kapso-whatsapp"].webhookPath' '"/kapso/webhook"' --strict-json
 openclaw config set 'channels["kapso-whatsapp"].defaultTo' '"+15551234567"' --strict-json
 openclaw config set 'channels["kapso-whatsapp"].dmSecurity' '"allowlist"' --strict-json
-openclaw config set 'channels["kapso-whatsapp"].allowFrom' '["+15551234567"]' --strict-json
+openclaw config set 'channels["kapso-whatsapp"].allowFrom' '["+15551234567","15551234567"]' --strict-json
 ```
+
+Kapso webhook sender IDs often arrive as digits-only values such as `15551234567`, while users naturally type E.164 values such as `+15551234567`. Current plugin versions treat those two forms as the same sender for allowlist checks. Including both forms is harmless and helps when testing older installs or raw config edits.
 
 You can also use environment variables:
 
@@ -258,6 +283,18 @@ The Kapso webhook secret and `channels["kapso-whatsapp"].webhookSecret` do not m
 ### Webhook is reachable but no messages arrive
 
 Confirm the webhook is phone-number scoped and subscribed to `whatsapp.message.received`. Project webhooks do not receive WhatsApp message events.
+
+### Webhook dispatches but no agent session or reply
+
+If logs show `kapso-whatsapp: webhook dispatch account=...` but no OpenClaw session or outbound reply starts, check `allowFrom`. Kapso commonly sends inbound sender IDs without a leading `+`, for example `56975746426`, even if your allowlist was configured as `+56975746426`.
+
+Current plugin versions compare those forms as the same sender. On older installs, or while editing raw config, include both variants and restart the gateway:
+
+```bash
+openclaw config set 'channels["kapso-whatsapp"].allowFrom' '["+56975746426","56975746426"]' --strict-json
+```
+
+Restart the running OpenClaw gateway process after changing channel config.
 
 ### Images sometimes work and sometimes do not
 

@@ -20,4 +20,16 @@ export function normalizeWhatsAppTarget(raw) {
 export function looksLikeWhatsAppTarget(raw) {
     return Boolean(normalizeWhatsAppTarget(raw));
 }
+export function whatsAppTargetsEquivalent(left, right) {
+    const normalizedLeft = normalizeWhatsAppTarget(left);
+    const normalizedRight = normalizeWhatsAppTarget(right);
+    if (!normalizedLeft || !normalizedRight)
+        return false;
+    if (normalizedLeft === normalizedRight)
+        return true;
+    return stripLeadingPlus(normalizedLeft) === stripLeadingPlus(normalizedRight);
+}
+function stripLeadingPlus(value) {
+    return value.startsWith("+") ? value.slice(1) : value;
+}
 //# sourceMappingURL=targets.js.map

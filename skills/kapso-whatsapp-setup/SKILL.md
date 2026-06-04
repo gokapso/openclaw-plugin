@@ -37,11 +37,10 @@ Preserve any existing `plugins.allow` entries instead of replacing unrelated tru
 2. Confirm the Kapso CLI is authenticated if number resolution or CLI webhook registration is needed. The plugin bundles `@kapso/cli`; use the OpenClaw wrapper instead of asking the user to install a global CLI:
 
 ```bash
-openclaw kapso-whatsapp cli login
 openclaw kapso-whatsapp cli status --output json
 ```
 
-If the CLI is not logged in and the user did not provide `phoneNumberId`, ask them to run `openclaw kapso-whatsapp cli login` or provide the Kapso/Meta `phone_number_id`.
+Do not run `openclaw kapso-whatsapp cli login` during an agent-driven setup turn. It is interactive and can look like a hidden hang. If the CLI is not logged in and the user did not provide `phoneNumberId`, stop and ask them to run `openclaw kapso-whatsapp cli login` in their terminal, then retry.
 
 3. Determine the public OpenClaw webhook URL. Prefer discovery before asking the user:
 
@@ -112,6 +111,8 @@ openclaw kapso-whatsapp setup \
 ```
 
 Add `--default-to "+15551234567"` when the user wants a default outbound WhatsApp recipient. Add `--dry-run` first when you are unsure.
+
+When configuring inbound allowlists, remember that Kapso webhook sender IDs often arrive digits-only, for example `56975746426`, while users may type `+56975746426`. Current plugin versions treat those forms as equivalent; when repairing older installs or raw config, include both variants in `channels["kapso-whatsapp"].allowFrom`.
 
 6. Verify after setup:
 
