@@ -51,20 +51,32 @@ After you create the Kapso API key and configure it on the server yourself, past
 Use the kapso-whatsapp-setup skill to finish my Kapso WhatsApp OpenClaw setup.
 
 I already configured my Kapso API key on this server.
-Public gateway webhook URL: https://your-machine.your-tailnet.ts.net/kapso/webhook
-WhatsApp display number: +15551234567
 Default outbound recipient: +15551234567
+Public gateway: discover it if possible. I am using Tailscale Funnel on this machine.
+Kapso WhatsApp sender number: discover it with the Kapso CLI. If there is more than one available number, ask me which one to use.
 
-Please verify the Kapso CLI and @kapso/openclaw-whatsapp plugin are installed, resolve the phone_number_id, generate a webhook secret, register the Kapso phone-number webhook for whatsapp.message.received, write the OpenClaw channel config, set this channel as usable for outbound WhatsApp messages, run diagnostics, and tell me exactly what remains manual.
+Please verify the Kapso CLI and @kapso/openclaw-whatsapp plugin are installed, discover the public webhook URL, resolve the phone_number_id, generate a webhook secret, register the Kapso phone-number webhook for whatsapp.message.received, write the OpenClaw channel config, set the default outbound recipient, run diagnostics, and tell me exactly what remains manual.
 ```
 
-If you already know the number ID, replace the display-number line with:
+If you already know the public webhook URL, replace the gateway line with:
+
+```text
+Public gateway webhook URL: https://your-openclaw-host.example.com/kapso/webhook
+```
+
+If you are using a different public tunnel or reverse proxy, name it instead:
+
+```text
+Public gateway: discover it if possible. I am using ngrok on this machine.
+```
+
+If you already know the Kapso/Meta number ID, replace the sender-number line with:
 
 ```text
 Kapso/Meta phone_number_id: 1234567890
 ```
 
-If the Kapso CLI is not logged in, the agent may ask you to run `kapso login` once in the terminal.
+If the Kapso CLI is not logged in, the agent may ask you to run `kapso login` once in the terminal. If it cannot discover the public HTTPS URL from the gateway or tunnel service, it should ask you for that URL rather than guessing.
 
 ## Configure
 
@@ -135,6 +147,12 @@ The Kapso webhook URL should use your Funnel hostname plus the channel webhook p
 
 ```text
 https://your-machine.your-tailnet.ts.net/kapso/webhook
+```
+
+To discover an existing Funnel URL from the machine running OpenClaw, use:
+
+```bash
+tailscale funnel status --json
 ```
 
 ## Kapso Webhook

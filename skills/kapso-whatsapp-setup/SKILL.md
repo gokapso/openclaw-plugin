@@ -54,7 +54,19 @@ kapso status --output json
 
 If the CLI is not logged in and the user did not provide `phoneNumberId`, ask them to run `kapso login` or provide the Kapso/Meta `phone_number_id`.
 
-3. Determine the public OpenClaw webhook URL. For Tailscale Funnel, run the gateway with password auth:
+3. Determine the public OpenClaw webhook URL. Prefer discovery before asking the user:
+
+- If the user pasted a full public webhook URL, use it.
+- If the user named a tunnel or gateway service, inspect that service when a CLI is available.
+- For Tailscale Funnel, check the active Funnel config:
+
+```bash
+command -v tailscale && tailscale funnel status --json
+```
+
+Use the public Funnel hostname or URL for the OpenClaw gateway and append `/kapso/webhook` unless the channel has a custom `webhookPath`. Tailscale Serve is private to the tailnet; Kapso Cloud needs Funnel or another public HTTPS URL.
+
+For Tailscale Funnel, run the gateway with password auth when it is not already running:
 
 ```bash
 mkdir -p ~/.openclaw
@@ -75,14 +87,16 @@ The webhook URL normally ends in `/kapso/webhook`, for example:
 https://your-machine.your-tailnet.ts.net/kapso/webhook
 ```
 
-4. Resolve the phone number ID:
+If the URL cannot be discovered with confidence, ask the user to paste the final public HTTPS webhook URL.
+
+4. Resolve the Kapso WhatsApp sender number and phone number ID. Do not assume the default outbound recipient is the Kapso sender number.
 
 ```bash
 kapso whatsapp numbers list --output json
 kapso whatsapp numbers resolve "+15551234567" --output json
 ```
 
-Prefer an existing `channels["kapso-whatsapp"].phoneNumberId` or a user-provided `phoneNumberId` when available.
+Prefer an existing `channels["kapso-whatsapp"].phoneNumberId` or a user-provided `phoneNumberId` when available. Otherwise, use `kapso whatsapp numbers list --output json` to find available WhatsApp numbers. If there is exactly one active number, use it; if there are multiple, show the choices and ask the user which sender number to connect.
 
 5. Run the plugin setup command. If the user says their Kapso API key is already configured on the server, do not ask them to paste it into chat and do not print it back.
 
