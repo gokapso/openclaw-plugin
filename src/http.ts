@@ -6,6 +6,8 @@ import type { ResolvedKapsoAccount } from "./config.js";
 import { dispatchKapsoInboundEvent } from "./inbound.js";
 import {
   findVerifiedWebhookAccount,
+  KAPSO_MESSAGE_RECEIVED_EVENT,
+  type KapsoInboundEvent,
   normalizeKapsoWebhook,
   readHeader,
   readRawRequestBody,
@@ -89,14 +91,47 @@ export async function handleKapsoWebhookRequest(params: {
   for (const event of normalized.events) {
     const account = selectKapsoAccountForEvent(accounts, event, verifiedAccount);
     if (!account) continue;
+    logWebhookDispatch(api, account, event);
     await dispatchKapsoInboundEvent({ api, account, event });
     dispatched += 1;
+  }
+
+  if (dispatched === 0) {
+    api.logger.info(`${CHANNEL_ID}: webhook accepted but no ${KAPSO_MESSAGE_RECEIVED_EVENT} events were dispatched`);
   }
 
   writeJson(res, 200, {
     ok: true,
     dispatched
   });
+}
+
+function logWebhookDispatch(api: OpenClawPluginApi, account: ResolvedKapsoAccount, event: KapsoInboundEvent): void {
+  const mediaSummary = summarizeMedia(event);
+  api.logger.info(
+    `${CHANNEL_ID}: webhook dispatch account=${account.accountId} type=${event.type} media=${mediaSummary}`
+  );
+
+  if (event.media.some((media) => media.id && !media.url)) {
+    api.logger.warn(
+      `${CHANNEL_ID}: inbound ${event.type} media included an id but no URL; the model cannot inspect the media until Kapso sends mediaUrl/downloadUrl or another transcription/download step resolves it`
+    );
+  }
+}
+
+function summarizeMedia(event: KapsoInboundEvent): string {
+  if (event.media.length === 0) return "none";
+  return event.media
+    .map((media) => {
+      const parts = [
+        media.kind,
+        `url=${media.url ? "yes" : "no"}`,
+        `id=${media.id ? "yes" : "no"}`
+      ];
+      if (media.contentType) parts.push(`contentType=${media.contentType}`);
+      return parts.join("/");
+    })
+    .join(",");
 }
 
 function groupAccountsByWebhookPath(accounts: ResolvedKapsoAccount[]): Map<string, ResolvedKapsoAccount[]> {

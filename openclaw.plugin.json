@@ -4,6 +4,9 @@
   "channels": [
     "kapso-whatsapp"
   ],
+  "skills": [
+    "./skills"
+  ],
   "name": "Kapso WhatsApp",
   "description": "Official Kapso WhatsApp channel plugin for OpenClaw.",
   "version": "0.1.0",
@@ -35,7 +38,14 @@
             "type": "string"
           },
           "phoneNumberId": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
           },
           "webhookSecret": {
             "type": "string"
@@ -47,7 +57,14 @@
             "type": "string"
           },
           "defaultTo": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
           },
           "dmSecurity": {
             "enum": [

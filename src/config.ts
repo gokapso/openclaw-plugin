@@ -56,11 +56,11 @@ export const kapsoChannelConfigSchema: ReturnType<typeof buildJsonChannelConfigS
     enabled: { type: "boolean" },
     name: { type: "string" },
     apiKey: { type: "string" },
-    phoneNumberId: { type: "string" },
+    phoneNumberId: stringOrNumberSchema(),
     webhookSecret: { type: "string" },
     baseUrl: { type: "string" },
     webhookPath: { type: "string" },
-    defaultTo: { type: "string" },
+    defaultTo: stringOrNumberSchema(),
     defaultAccountId: { type: "string" },
     dmSecurity: { enum: ["open", "allowlist", "disabled"] },
     allowFrom: {
@@ -231,11 +231,11 @@ export function applyKapsoAccountConfig(params: {
   };
 
   assignString(next, "apiKey", input.token ?? input.apiKey ?? input.kapsoApiKey);
-  assignString(next, "phoneNumberId", input.phoneNumberId);
+  assignString(next, "phoneNumberId", input.phoneNumberId, { coerceNumber: true });
   assignString(next, "webhookSecret", input.secret ?? input.webhookSecret);
   assignString(next, "baseUrl", input.baseUrl);
   assignString(next, "webhookPath", input.webhookPath);
-  assignString(next, "defaultTo", input.defaultTo ?? input.to);
+  assignString(next, "defaultTo", input.defaultTo ?? input.to, { coerceNumber: true });
 
   if (Array.isArray(input.dmAllowlist)) {
     next.allowFrom = input.dmAllowlist.map(String).map((entry) => entry.trim()).filter(Boolean);
@@ -260,7 +260,7 @@ export function applyKapsoAccountConfig(params: {
 
 export function validateKapsoSetupInput(input: Record<string, unknown>): string | null {
   const apiKey = firstNonEmpty(input.token, input.apiKey, input.kapsoApiKey, process.env.KAPSO_API_KEY);
-  const phoneNumberId = firstNonEmpty(input.phoneNumberId, process.env.KAPSO_PHONE_NUMBER_ID);
+  const phoneNumberId = firstNonEmpty(readStringOrNumber(input.phoneNumberId), process.env.KAPSO_PHONE_NUMBER_ID);
 
   if (!apiKey) return "Kapso API key is required. Provide token/apiKey or set KAPSO_API_KEY.";
   if (!phoneNumberId) {
@@ -304,11 +304,11 @@ function normalizeAccountConfig(raw: Record<string, unknown>): KapsoWhatsappAcco
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : undefined,
     name: readString(raw.name),
     apiKey: readString(raw.apiKey ?? raw.kapsoApiKey ?? raw.token),
-    phoneNumberId: readString(raw.phoneNumberId),
+    phoneNumberId: readStringOrNumber(raw.phoneNumberId),
     webhookSecret: readString(raw.webhookSecret ?? raw.secret),
     baseUrl: readString(raw.baseUrl),
     webhookPath: readString(raw.webhookPath),
-    defaultTo: readString(raw.defaultTo),
+    defaultTo: readStringOrNumber(raw.defaultTo),
     dmSecurity: normalizeDmPolicy(raw.dmSecurity ?? raw.dmPolicy),
     allowFrom: Array.isArray(raw.allowFrom) ? raw.allowFrom.map(String) : undefined
   };
@@ -354,6 +354,13 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readStringOrNumber(value: unknown): string | undefined {
+  const text = readString(value);
+  if (text) return text;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
 function firstNonEmpty(...values: unknown[]): string | undefined {
   for (const value of values) {
     const text = readString(value);
@@ -362,9 +369,23 @@ function firstNonEmpty(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-function assignString(target: KapsoWhatsappAccountConfig, key: keyof KapsoWhatsappAccountConfig, value: unknown): void {
-  const text = readString(value);
+function assignString(
+  target: KapsoWhatsappAccountConfig,
+  key: keyof KapsoWhatsappAccountConfig,
+  value: unknown,
+  options: { coerceNumber?: boolean } = {}
+): void {
+  const text = options.coerceNumber ? readStringOrNumber(value) : readString(value);
   if (text) {
     (target as Record<string, unknown>)[key] = text;
   }
+}
+
+function stringOrNumberSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      { type: "string" },
+      { type: "number" }
+    ]
+  };
 }

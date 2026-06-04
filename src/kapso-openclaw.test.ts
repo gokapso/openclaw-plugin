@@ -60,6 +60,23 @@ describe("Kapso OpenClaw plugin", () => {
     expect(account.allowFrom).toEqual(["+15551234567"]);
   });
 
+  it("coerces number-like channel config values to strings", () => {
+    const cfg = {
+      channels: {
+        [CHANNEL_ID]: {
+          apiKey: "from-config",
+          phoneNumberId: 1234567890,
+          defaultTo: 15551234567
+        }
+      }
+    } as unknown as OpenClawConfig;
+
+    const account = resolveKapsoAccount(cfg);
+
+    expect(account.phoneNumberId).toBe("1234567890");
+    expect(account.defaultTo).toBe("15551234567");
+  });
+
   it("verifies Kapso webhook signatures", () => {
     const rawBody = Buffer.from(JSON.stringify({ ok: true }));
     const signature = createHmac("sha256", "shared-secret").update(rawBody).digest("hex");
