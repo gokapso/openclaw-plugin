@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { run as runKapsoCli } from "@kapso/cli";
 import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
+import { updateConfig } from "openclaw/plugin-sdk/config-mutation";
 import { CHANNEL_ID, CHANNEL_LABEL } from "./constants.js";
 import { kapsoWhatsappPlugin } from "./channel.js";
 import {
@@ -15,6 +16,7 @@ import type { ResolvedKapsoAccount } from "./config.js";
 import { registerKapsoWebhookRoutes } from "./http.js";
 
 const nodeRequire = createRequire(import.meta.url);
+const KAPSO_CLI_PACKAGE_PATH = "@kapso/cli/package.json";
 
 const entry: OpenClawPluginDefinition = defineChannelPluginEntry({
   id: CHANNEL_ID,
@@ -33,22 +35,22 @@ const entry: OpenClawPluginDefinition = defineChannelPluginEntry({
         .argument("[args...]", "Arguments forwarded to Kapso CLI")
         .allowUnknownOption(true)
         .allowExcessArguments(true)
-        .action((args: string[] = []) => {
-          const result = runKapsoCommand(args, { stdio: "inherit" });
+        .action(async (args: string[] = []) => {
+          const result = await runKapsoCommand(args, { stdio: "inherit" });
           if (result.error) {
             console.error(`Failed to run Kapso CLI: ${result.error.message}`);
-            process.exitCode = 1;
+            process.exitCode = result.status || 1;
             return;
           }
-          process.exitCode = result.status ?? 0;
+          process.exitCode = result.status;
         });
 
       command
         .command("doctor")
         .description("Check Kapso WhatsApp plugin configuration")
         .option("--json", "Print machine-readable diagnostics", false)
-        .action((opts: { json?: boolean }) => {
-          const report = buildDoctorReport(config);
+        .action(async (opts: { json?: boolean }) => {
+          const report = await buildDoctorReport(config);
           if (opts.json) {
             console.log(JSON.stringify(report, null, 2));
             return;
@@ -112,7 +114,7 @@ type DoctorReport = {
   accounts: DoctorAccount[];
   kapsoCli: {
     installed: boolean;
-    source?: "bundled" | "path";
+    source?: "bundled" | "missing";
     version?: string;
     error?: string;
   };
@@ -162,7 +164,7 @@ type SetupReport = {
   warnings: string[];
 };
 
-function buildDoctorReport(config: OpenClawConfig): DoctorReport {
+async function buildDoctorReport(config: OpenClawConfig): Promise<DoctorReport> {
   const accounts = listKapsoAccountIds(config).map((accountId) => {
     const account = resolveKapsoAccount(config, accountId);
     const details = inspectKapsoAccount(config, accountId);
@@ -182,7 +184,7 @@ function buildDoctorReport(config: OpenClawConfig): DoctorReport {
   return {
     channelId: CHANNEL_ID,
     accounts,
-    kapsoCli: probeKapsoCli(),
+    kapsoCli: await probeKapsoCli(),
     nextSteps: buildNextSteps(accounts)
   };
 }
@@ -191,14 +193,11 @@ async function buildSetupReport(config: OpenClawConfig, opts: SetupOptions): Pro
   const warnings: string[] = [];
   const accountId = opts.account ?? resolveDefaultKapsoAccountId(config);
   const account = resolveKapsoAccount(config, accountId);
-  const kapsoCli = {
-    ...probeKapsoCli(),
-    ...probeKapsoStatus()
-  };
+  const kapsoCli = await buildKapsoCliStatus();
 
   let phoneNumberId = readCliString(opts.phoneNumberId) ?? account.phoneNumberId;
   if (!phoneNumberId && opts.phoneNumber) {
-    const resolved = resolveKapsoPhoneNumber(opts.phoneNumber);
+    const resolved = await resolveKapsoPhoneNumber(opts.phoneNumber);
     if (resolved.phoneNumberId) {
       phoneNumberId = resolved.phoneNumberId;
     } else {
@@ -229,7 +228,7 @@ async function buildSetupReport(config: OpenClawConfig, opts: SetupOptions): Pro
     webhookSecret,
     webhookUrl
   });
-  const configWrite = writeConfigCommands(configCommands, {
+  const configWrite = await writeConfigCommands(configCommands, {
     dryRun: opts.dryRun === true,
     writeConfig: opts.writeConfig === true
   });
@@ -266,9 +265,24 @@ async function buildSetupReport(config: OpenClawConfig, opts: SetupOptions): Pro
   };
 }
 
-function probeKapsoCli(): DoctorReport["kapsoCli"] {
+async function buildKapsoCliStatus(): Promise<SetupReport["kapsoCli"]> {
+  return {
+    ...await probeKapsoCli(),
+    ...await probeKapsoStatus()
+  };
+}
+
+async function probeKapsoCli(): Promise<DoctorReport["kapsoCli"]> {
   const cli = resolveKapsoCli();
-  const result = runKapsoCommand(["--version"]);
+  if (!cli.packagePath) {
+    return {
+      installed: false,
+      source: cli.source,
+      error: cli.error
+    };
+  }
+
+  const result = await runKapsoCommand(["--version"]);
 
   if (result.error) {
     return {
@@ -286,15 +300,15 @@ function probeKapsoCli(): DoctorReport["kapsoCli"] {
   };
 }
 
-function probeKapsoStatus(): Pick<SetupReport["kapsoCli"], "status" | "statusDetail"> {
-  const result = runKapsoCommand(["status", "--output", "json"]);
+async function probeKapsoStatus(): Promise<Pick<SetupReport["kapsoCli"], "status" | "statusDetail">> {
+  const result = await runKapsoCommand(["status", "--output", "json"]);
   if (result.error) return { status: "skipped", statusDetail: result.error.message };
   if (result.status === 0) return { status: "ok" };
   return { status: "failed", statusDetail: stderrOrStdout(result) || `kapso status exited with ${result.status}` };
 }
 
-function resolveKapsoPhoneNumber(phoneNumber: string): { phoneNumberId?: string; error?: string } {
-  const result = runKapsoCommand(["whatsapp", "numbers", "resolve", phoneNumber, "--output", "json"]);
+async function resolveKapsoPhoneNumber(phoneNumber: string): Promise<{ phoneNumberId?: string; error?: string }> {
+  const result = await runKapsoCommand(["whatsapp", "numbers", "resolve", phoneNumber, "--output", "json"]);
   if (result.error) return { error: result.error.message };
   if (result.status !== 0) return { error: stderrOrStdout(result) || `kapso resolve exited with ${result.status}` };
 
@@ -352,7 +366,7 @@ async function maybeRegisterWebhook(params: {
   ];
   if (params.dryRun) return { status: "planned", method: "cli", command };
 
-  const result = runKapsoCommand(command.slice(1));
+  const result = await runKapsoCommand(command.slice(1));
   if (result.error) return { status: "failed", method: "cli", command, error: result.error.message };
   if (result.status !== 0) {
     return {
@@ -384,7 +398,7 @@ async function registerWebhookWithApi(params: {
   webhookId?: string;
   error?: string;
 }> {
-  const baseUrl = normalizeKapsoPlatformBaseUrl(process.env.KAPSO_API_BASE_URL);
+  const baseUrl = normalizeKapsoPlatformBaseUrl(undefined);
   const response = await fetch(
     `${baseUrl}/platform/v1/whatsapp/phone_numbers/${encodeURIComponent(params.phoneNumberId)}/webhooks`,
     {
@@ -456,22 +470,86 @@ function configSetCommand(path: string, value: unknown): string[] {
   return ["openclaw", "config", "set", path, JSON.stringify(value), "--strict-json"];
 }
 
-function writeConfigCommands(commands: string[][], opts: {
+async function writeConfigCommands(commands: string[][], opts: {
   dryRun: boolean;
   writeConfig: boolean;
-}): { status: SetupReport["config"]["status"]; errors: string[] } {
+}): Promise<{ status: SetupReport["config"]["status"]; errors: string[] }> {
   if (!opts.writeConfig) return { status: opts.dryRun ? "planned" : "skipped", errors: [] };
   if (opts.dryRun) return { status: "planned", errors: [] };
 
-  const errors = [];
-  for (const command of commands) {
-    const [bin, ...args] = command;
-    const result = runCommand(bin ?? "openclaw", args);
-    if (result.error || result.status !== 0) {
-      errors.push(result.error?.message ?? stderrOrStdout(result) ?? `${command.join(" ")} exited with ${result.status}`);
-    }
+  try {
+    await updateConfig((cfg) => {
+      for (const command of commands) applyConfigSetCommand(cfg, command);
+      return cfg;
+    });
+    return { status: "written", errors: [] };
+  } catch (error) {
+    return { status: "failed", errors: [error instanceof Error ? error.message : String(error)] };
   }
-  return { status: errors.length > 0 ? "failed" : "written", errors };
+}
+
+function applyConfigSetCommand(cfg: OpenClawConfig, command: string[]): void {
+  const path = command[3];
+  const rawValue = command[4];
+  if (!path || rawValue === undefined) throw new Error(`Invalid config command: ${shellJoin(command)}`);
+  setConfigPath(cfg as Record<string, unknown>, path, JSON.parse(rawValue));
+}
+
+function setConfigPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = parseConfigPath(path);
+  if (parts.length === 0) throw new Error(`Invalid empty config path: ${path}`);
+
+  let cursor: Record<string, unknown> = target;
+  for (const part of parts.slice(0, -1)) {
+    const next = cursor[part];
+    if (!next || typeof next !== "object" || Array.isArray(next)) {
+      cursor[part] = {};
+    }
+    cursor = cursor[part] as Record<string, unknown>;
+  }
+
+  cursor[parts[parts.length - 1] ?? ""] = value;
+}
+
+function parseConfigPath(path: string): string[] {
+  const parts: string[] = [];
+  let index = 0;
+
+  while (index < path.length) {
+    const char = path[index];
+    if (char === ".") {
+      index += 1;
+      continue;
+    }
+
+    if (char === "[") {
+      const end = path.indexOf("]", index);
+      if (end === -1) throw new Error(`Invalid config path: ${path}`);
+      const token = path.slice(index + 1, end);
+      parts.push(parseBracketPathToken(token, path));
+      index = end + 1;
+      continue;
+    }
+
+    const start = index;
+    while (index < path.length && path[index] !== "." && path[index] !== "[") index += 1;
+    parts.push(path.slice(start, index));
+  }
+
+  return parts.filter(Boolean);
+}
+
+function parseBracketPathToken(token: string, path: string): string {
+  const trimmed = token.trim();
+  if (!trimmed) throw new Error(`Invalid config path: ${path}`);
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === "string" || typeof parsed === "number") return String(parsed);
+  } catch {
+    // Fall through to the legacy unquoted bracket form below.
+  }
+  if (/^[A-Za-z0-9_-]+$/.test(trimmed)) return trimmed;
+  throw new Error(`Invalid config path token in ${path}`);
 }
 
 function buildSetupNextSteps(params: {
@@ -580,37 +658,115 @@ function formatKapsoCliStatus(kapsoCli: DoctorReport["kapsoCli"]): string {
   return `${status}${version}${source}`;
 }
 
-function resolveKapsoCli(): { command: string; argsPrefix: string[]; source: "bundled" | "path" } {
+function resolveKapsoCli(): { packagePath?: string; source: "bundled" | "missing"; error?: string } {
   try {
     return {
-      command: process.execPath,
-      argsPrefix: [nodeRequire.resolve("@kapso/cli/bin/run.js")],
+      packagePath: nodeRequire.resolve(KAPSO_CLI_PACKAGE_PATH),
       source: "bundled"
     };
-  } catch {
+  } catch (error) {
     return {
-      command: "kapso",
-      argsPrefix: [],
-      source: "path"
+      source: "missing",
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
 
-function runKapsoCommand(args: string[], opts?: { stdio?: "pipe" | "inherit" }) {
-  const cli = resolveKapsoCli();
-  return runCommand(cli.command, [...cli.argsPrefix, ...args], opts);
-}
+type KapsoCommandResult = {
+  status: number;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+};
 
-function runCommand(command: string, args: string[], opts?: { stdio?: "pipe" | "inherit" }) {
-  return spawnSync(command, args, {
-    encoding: "utf8",
-    shell: false,
-    stdio: opts?.stdio ?? "pipe",
-    timeout: 10000
+async function runKapsoCommand(args: string[], opts?: { stdio?: "pipe" | "inherit" }): Promise<KapsoCommandResult> {
+  const cli = resolveKapsoCli();
+  if (!cli.packagePath) {
+    return {
+      status: 1,
+      stdout: "",
+      stderr: "",
+      error: new Error(cli.error ?? "Bundled @kapso/cli was not found.")
+    };
+  }
+
+  if (opts?.stdio === "inherit") {
+    try {
+      await runKapsoCli(args, cli.packagePath);
+      return { status: 0, stdout: "", stderr: "" };
+    } catch (error) {
+      return buildKapsoCommandErrorResult(error);
+    }
+  }
+
+  return captureProcessOutput(async () => {
+    await runKapsoCli(args, cli.packagePath);
   });
 }
 
-function stderrOrStdout(result: ReturnType<typeof runCommand>): string | undefined {
+async function captureProcessOutput(fn: () => Promise<void>): Promise<KapsoCommandResult> {
+  const originalStdoutWrite = process.stdout.write;
+  const originalStderrWrite = process.stderr.write;
+  let stdout = "";
+  let stderr = "";
+
+  process.stdout.write = ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+    stdout += stringifyWriteChunk(chunk);
+    const cb = typeof encodingOrCallback === "function" ? encodingOrCallback : callback;
+    if (typeof cb === "function") cb();
+    return true;
+  }) as typeof process.stdout.write;
+
+  process.stderr.write = ((chunk: unknown, encodingOrCallback?: unknown, callback?: unknown) => {
+    stderr += stringifyWriteChunk(chunk);
+    const cb = typeof encodingOrCallback === "function" ? encodingOrCallback : callback;
+    if (typeof cb === "function") cb();
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    await fn();
+    return { status: 0, stdout, stderr };
+  } catch (error) {
+    const result = buildKapsoCommandErrorResult(error);
+    return {
+      ...result,
+      stdout,
+      stderr: stderr || result.stderr
+    };
+  } finally {
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+  }
+}
+
+function stringifyWriteChunk(chunk: unknown): string {
+  if (Buffer.isBuffer(chunk)) return chunk.toString("utf8");
+  if (chunk instanceof Uint8Array) return Buffer.from(chunk).toString("utf8");
+  return String(chunk);
+}
+
+function buildKapsoCommandErrorResult(error: unknown): KapsoCommandResult {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  const status = readExitCode(error);
+  return {
+    status,
+    stdout: "",
+    stderr: normalized.message,
+    ...(status === 0 ? {} : { error: normalized })
+  };
+}
+
+function readExitCode(error: unknown): number {
+  if (!error || typeof error !== "object") return 1;
+  const direct = (error as { exitCode?: unknown }).exitCode;
+  if (typeof direct === "number") return direct;
+  const oclif = (error as { oclif?: { exit?: unknown } }).oclif;
+  if (typeof oclif?.exit === "number") return oclif.exit;
+  return 1;
+}
+
+function stderrOrStdout(result: KapsoCommandResult): string | undefined {
   return (result.stderr || result.stdout).trim() || undefined;
 }
 

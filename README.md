@@ -185,7 +185,7 @@ openclaw kapso-whatsapp cli whatsapp webhooks new \
   --output json
 ```
 
-The setup command also uses the bundled CLI internally for finding `phone_number_id`, checking project access, and registering webhooks. If the bundled CLI cannot be resolved for some reason, the plugin falls back to a `kapso` binary on `PATH`.
+The setup command also uses the bundled CLI internally for finding `phone_number_id`, checking project access, and registering webhooks.
 
 ## Diagnostics
 
