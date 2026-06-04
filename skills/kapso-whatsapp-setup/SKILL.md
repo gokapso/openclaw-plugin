@@ -126,8 +126,9 @@ openclaw logs --plain --limit 500 | grep -Ei 'kapso|whatsapp|media|image|audio|d
 
 - Images, videos, and documents can work when Kapso includes a downloadable media URL and the selected OpenClaw model/runtime can process that media type.
 - If logs show a media ID but no URL, the model received metadata but not the file bytes.
-- Voice notes need an audio transcription provider. Without one, the agent may only see audio metadata.
+- Voice notes need OpenClaw `tools.media.audio` transcription. Without it, the agent may only see audio metadata.
 - Hosted speech-to-text options include OpenAI `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, and `whisper-1`.
+- Local ASR can work through a CLI media model. `faster-whisper` is a good no-key option when wrapped by a command that accepts `{{MediaPath}}` and prints only the transcript.
 - Self-hosted ASR can work if the deployment exposes a compatible transcription provider; NVIDIA Parakeet TDT 0.6B v3 is a reasonable GPU-backed model to evaluate but is not bundled by this plugin.
 
 8. Report only the remaining manual steps, such as Kapso login, API key creation, selecting the correct number, Meta/Kapso permission issues, or restarting the gateway.

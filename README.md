@@ -1,8 +1,18 @@
 # Kapso WhatsApp for OpenClaw
 
-Official OpenClaw channel plugin for sending and receiving WhatsApp messages through Kapso.
+Official OpenClaw channel plugin for WhatsApp through Kapso. It receives Kapso platform webhooks, turns inbound WhatsApp messages and media into OpenClaw channel turns, and sends OpenClaw replies through Kapso's WhatsApp Cloud API proxy.
 
-## Quickstart
+## Install
+
+### Prerequisites
+
+- An OpenClaw install with the gateway enabled.
+- A Kapso account. Sign up at [kapso.ai](https://kapso.ai/), create or open a project, and create a project API key in the Kapso dashboard.
+- A connected Kapso WhatsApp number. If you do not have one yet, run `kapso setup` or complete WhatsApp onboarding in the Kapso dashboard.
+- A public HTTPS URL that can reach the OpenClaw gateway. Tailscale Funnel works well for local machines and VPS instances.
+- Node.js/npm only if you are developing this plugin locally. ClawHub installs runtime dependencies for normal plugin installs.
+
+Install and enable the plugin:
 
 ```bash
 openclaw plugins install clawhub:@kapso/openclaw-whatsapp
@@ -21,7 +31,9 @@ openclaw kapso-whatsapp cli status
 
 You can still install `@kapso/cli` globally if you want a standalone `kapso` command in your shell.
 
-After your OpenClaw gateway has a public URL, let the plugin resolve the number, register the webhook, and write OpenClaw config:
+## Quickstart
+
+Recommended setup after your OpenClaw gateway has a public URL:
 
 ```bash
 openclaw kapso-whatsapp setup \
@@ -33,7 +45,21 @@ openclaw kapso-whatsapp setup \
   --write-config
 ```
 
+That command can:
+
+- resolve the Kapso/Meta `phone_number_id` from a display phone number
+- register a phone-number scoped Kapso webhook for `whatsapp.message.received`
+- write the Kapso channel config into OpenClaw
+- set the webhook secret used for signature verification
+
 If you already know the Kapso/Meta `phone_number_id`, use `--phone-number-id` instead of `--phone-number`. If you omit `--write-config`, the command prints the `openclaw config set` commands without applying them.
+
+Restart the gateway if it was already running while you changed channel config:
+
+```bash
+openclaw gateway restart
+openclaw gateway status
+```
 
 ## Agent-Driven Setup
 
@@ -244,10 +270,71 @@ Images, videos, and documents can be forwarded to OpenClaw when Kapso includes a
 
 If Kapso sends only a media ID and no URL, the plugin records that media exists but cannot give the model the actual file. The logs will warn about `id but no URL`.
 
-Voice notes and audio messages are different from images. The plugin can pass audio media URLs through when present, but normal text/chat models do not automatically transcribe voice notes unless your OpenClaw setup has an audio transcription path. Practical options include:
+## Voice Notes
+
+Inbound WhatsApp voice notes are passed through as audio media when Kapso includes a downloadable media URL. OpenClaw then transcribes the audio through `tools.media.audio` before the agent turn. The plugin should not call STT providers directly; it keeps the channel adapter provider-neutral.
+
+For OpenAI transcription:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+openclaw config set 'tools.media.audio.enabled' true --strict-json
+openclaw config set 'tools.media.audio.models' '[{"provider":"openai","model":"gpt-4o-mini-transcribe"}]' --strict-json
+openclaw gateway restart
+```
+
+Other OpenAI model options include `whisper-1` and `gpt-4o-transcribe`.
+
+For local, no-key transcription with `faster-whisper`, expose it as an OpenClaw CLI media model. The command must print only the transcript to stdout:
+
+```bash
+mkdir -p ~/.openclaw/bin ~/.openclaw/venvs
+python3 -m venv ~/.openclaw/venvs/faster-whisper
+~/.openclaw/venvs/faster-whisper/bin/python -m pip install -U pip setuptools wheel faster-whisper
+
+cat > ~/.openclaw/bin/faster-whisper-transcribe <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+~/.openclaw/venvs/faster-whisper/bin/python - "$1" <<'PY'
+import os
+import sys
+from faster_whisper import WhisperModel
+
+audio_path = sys.argv[1]
+model_name = os.environ.get("FASTER_WHISPER_MODEL", "base")
+model = WhisperModel(model_name, device="auto", compute_type="auto")
+segments, _ = model.transcribe(audio_path, vad_filter=True)
+print(" ".join(segment.text.strip() for segment in segments).strip())
+PY
+EOF
+
+chmod +x ~/.openclaw/bin/faster-whisper-transcribe
+
+openclaw config set 'tools.media.audio.enabled' true --strict-json
+openclaw config set 'tools.media.audio.models' '[{"type":"cli","command":"~/.openclaw/bin/faster-whisper-transcribe","args":["{{MediaPath}}"],"timeoutSeconds":90}]' --strict-json
+openclaw gateway restart
+```
+
+For an ordered local-then-OpenAI fallback, configure both entries:
+
+```bash
+openclaw config set 'tools.media.audio.models' '[{"type":"cli","command":"~/.openclaw/bin/faster-whisper-transcribe","args":["{{MediaPath}}"],"timeoutSeconds":90},{"provider":"openai","model":"gpt-4o-mini-transcribe"}]' --strict-json
+```
+
+Verify voice-note processing while sending a WhatsApp voice note:
+
+```bash
+openclaw logs --follow --plain --limit 500 \
+  | grep --line-buffered -Ei 'kapso|audio|voice|media|transcrib|whisper|openai'
+```
+
+Healthy channel logs include `type=audio` and `media=audio/url=yes`. If you only see `id but no URL`, confirm the Kapso webhook payload includes `kapso.mediaUrl`, `kapso.media_url`, `media_data.url`, `media_data.downloadUrl`, or direct media `link`/`url`.
+
+Practical transcription options:
 
 - Use OpenAI speech-to-text with an API key, for example `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, or `whisper-1`.
-- Use a self-hosted ASR service and connect it to OpenClaw if your deployment supports a compatible transcription provider.
+- Use a local CLI model through `tools.media.audio.models`, such as the `faster-whisper` wrapper above.
+- Use a self-hosted ASR service and connect it to OpenClaw as a compatible transcription provider or CLI command.
 - For GPU-backed self-hosting, NVIDIA Parakeet TDT 0.6B v3 is a good candidate to evaluate for multilingual offline transcription, but it is not bundled or auto-configured by this plugin.
 
 Until a transcription provider is configured, an inbound voice note may only appear to the agent as an audio message rather than usable text.
@@ -300,10 +387,28 @@ Restart the running OpenClaw gateway process after changing channel config.
 
 Check the logs for `media=image/url=yes`. If the log says `url=no` or warns that the event had an ID but no URL, the model did not receive the actual image bytes.
 
+### Voice notes do not transcribe
+
+First confirm the channel received downloadable audio:
+
+```bash
+openclaw logs --plain --limit 500 | grep -Ei 'kapso|audio|voice|media|transcrib|whisper|openai'
+```
+
+If the Kapso log says `type=audio media=audio/url=yes`, the channel delivered the audio to OpenClaw and the issue is in `tools.media.audio` configuration or the selected STT provider. If it says `url=no` or `id but no URL`, the agent received metadata but not downloadable audio.
+
+For local `faster-whisper`, test the wrapper directly:
+
+```bash
+~/.openclaw/bin/faster-whisper-transcribe /path/to/audio.ogg
+```
+
 ## References
 
 - [Kapso docs](https://docs.kapso.ai)
 - [OpenAI speech-to-text](https://platform.openai.com/docs/guides/speech-to-text)
+- [OpenClaw audio and voice notes](https://docs.openclaw.ai/nodes/audio)
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 - [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [NVIDIA Speech NIM ASR overview](https://docs.nvidia.com/nim/speech/latest/asr/index.html)
 
