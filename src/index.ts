@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/core";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core";
@@ -13,6 +14,8 @@ import {
 import type { ResolvedKapsoAccount } from "./config.js";
 import { registerKapsoWebhookRoutes } from "./http.js";
 
+const nodeRequire = createRequire(import.meta.url);
+
 const entry: OpenClawPluginDefinition = defineChannelPluginEntry({
   id: CHANNEL_ID,
   name: CHANNEL_LABEL,
@@ -23,6 +26,22 @@ const entry: OpenClawPluginDefinition = defineChannelPluginEntry({
       const command = program
         .command("kapso-whatsapp")
         .description("Kapso WhatsApp channel management");
+
+      command
+        .command("cli")
+        .description("Run the bundled Kapso CLI")
+        .argument("[args...]", "Arguments forwarded to Kapso CLI")
+        .allowUnknownOption(true)
+        .allowExcessArguments(true)
+        .action((args: string[] = []) => {
+          const result = runKapsoCommand(args, { stdio: "inherit" });
+          if (result.error) {
+            console.error(`Failed to run Kapso CLI: ${result.error.message}`);
+            process.exitCode = 1;
+            return;
+          }
+          process.exitCode = result.status ?? 0;
+        });
 
       command
         .command("doctor")
@@ -93,6 +112,7 @@ type DoctorReport = {
   accounts: DoctorAccount[];
   kapsoCli: {
     installed: boolean;
+    source?: "bundled" | "path";
     version?: string;
     error?: string;
   };
@@ -247,31 +267,34 @@ async function buildSetupReport(config: OpenClawConfig, opts: SetupOptions): Pro
 }
 
 function probeKapsoCli(): DoctorReport["kapsoCli"] {
-  const result = runCommand("kapso", ["--version"]);
+  const cli = resolveKapsoCli();
+  const result = runKapsoCommand(["--version"]);
 
   if (result.error) {
     return {
       installed: false,
+      source: cli.source,
       error: result.error.message
     };
   }
 
   return {
     installed: result.status === 0,
+    source: cli.source,
     version: (result.stdout || result.stderr).trim() || undefined,
     ...(result.status === 0 ? {} : { error: `kapso --version exited with ${result.status}` })
   };
 }
 
 function probeKapsoStatus(): Pick<SetupReport["kapsoCli"], "status" | "statusDetail"> {
-  const result = runCommand("kapso", ["status", "--output", "json"]);
+  const result = runKapsoCommand(["status", "--output", "json"]);
   if (result.error) return { status: "skipped", statusDetail: result.error.message };
   if (result.status === 0) return { status: "ok" };
   return { status: "failed", statusDetail: stderrOrStdout(result) || `kapso status exited with ${result.status}` };
 }
 
 function resolveKapsoPhoneNumber(phoneNumber: string): { phoneNumberId?: string; error?: string } {
-  const result = runCommand("kapso", ["whatsapp", "numbers", "resolve", phoneNumber, "--output", "json"]);
+  const result = runKapsoCommand(["whatsapp", "numbers", "resolve", phoneNumber, "--output", "json"]);
   if (result.error) return { error: result.error.message };
   if (result.status !== 0) return { error: stderrOrStdout(result) || `kapso resolve exited with ${result.status}` };
 
@@ -329,7 +352,7 @@ async function maybeRegisterWebhook(params: {
   ];
   if (params.dryRun) return { status: "planned", method: "cli", command };
 
-  const result = runCommand(command[0] ?? "kapso", command.slice(1));
+  const result = runKapsoCommand(command.slice(1));
   if (result.error) return { status: "failed", method: "cli", command, error: result.error.message };
   if (result.status !== 0) {
     return {
@@ -495,7 +518,7 @@ function buildNextSteps(accounts: DoctorAccount[]): string[] {
 function printSetupReport(report: SetupReport): void {
   console.log("Kapso WhatsApp setup");
   console.log(`Account: ${report.accountId}`);
-  console.log(`Kapso CLI: ${report.kapsoCli.installed ? "installed" : "not found"}${report.kapsoCli.version ? ` (${report.kapsoCli.version})` : ""}`);
+  console.log(`Kapso CLI: ${formatKapsoCliStatus(report.kapsoCli)}`);
   if (report.kapsoCli.status) console.log(`Kapso status: ${report.kapsoCli.status}${report.kapsoCli.statusDetail ? ` (${report.kapsoCli.statusDetail})` : ""}`);
   console.log(`Phone number ID: ${report.resolved.phoneNumberId ?? "missing"}`);
   console.log(`Webhook URL: ${report.resolved.webhookUrl ?? "missing"}`);
@@ -527,7 +550,7 @@ function printSetupReport(report: SetupReport): void {
 function printDoctorReport(report: DoctorReport): void {
   console.log("Kapso WhatsApp doctor");
   console.log(`Channel: ${report.channelId}`);
-  console.log(`Kapso CLI: ${report.kapsoCli.installed ? "installed" : "not found"}${report.kapsoCli.version ? ` (${report.kapsoCli.version})` : ""}`);
+  console.log(`Kapso CLI: ${formatKapsoCliStatus(report.kapsoCli)}`);
   if (report.kapsoCli.error && !report.kapsoCli.installed) console.log(`Kapso CLI detail: ${report.kapsoCli.error}`);
   console.log("");
 
@@ -550,9 +573,39 @@ function printDoctorReport(report: DoctorReport): void {
   }
 }
 
-function runCommand(command: string, args: string[]) {
+function formatKapsoCliStatus(kapsoCli: DoctorReport["kapsoCli"]): string {
+  const status = kapsoCli.installed ? "installed" : "not found";
+  const version = kapsoCli.version ? ` (${kapsoCli.version})` : "";
+  const source = kapsoCli.source ? ` via ${kapsoCli.source}` : "";
+  return `${status}${version}${source}`;
+}
+
+function resolveKapsoCli(): { command: string; argsPrefix: string[]; source: "bundled" | "path" } {
+  try {
+    return {
+      command: process.execPath,
+      argsPrefix: [nodeRequire.resolve("@kapso/cli/bin/run.js")],
+      source: "bundled"
+    };
+  } catch {
+    return {
+      command: "kapso",
+      argsPrefix: [],
+      source: "path"
+    };
+  }
+}
+
+function runKapsoCommand(args: string[], opts?: { stdio?: "pipe" | "inherit" }) {
+  const cli = resolveKapsoCli();
+  return runCommand(cli.command, [...cli.argsPrefix, ...args], opts);
+}
+
+function runCommand(command: string, args: string[], opts?: { stdio?: "pipe" | "inherit" }) {
   return spawnSync(command, args, {
     encoding: "utf8",
+    shell: false,
+    stdio: opts?.stdio ?? "pipe",
     timeout: 10000
   });
 }

@@ -10,15 +10,16 @@ openclaw config set 'plugins.allow' '["codex","kapso-whatsapp"]' --strict-json
 openclaw config set 'channels["kapso-whatsapp"].enabled' true --strict-json
 ```
 
-OpenClaw resolves the package from ClawHub and installs runtime dependencies declared in `package.json`, including `@kapso/whatsapp-cloud-api`. You do not need to run a separate `npm install` for this plugin.
+OpenClaw resolves the package from ClawHub and installs runtime dependencies declared in `package.json`, including `@kapso/whatsapp-cloud-api` and `@kapso/cli`. You do not need to run a separate `npm install` for this plugin.
 
-The Kapso CLI is optional but recommended for setup:
+The plugin uses the bundled Kapso CLI automatically. To authenticate or run Kapso CLI commands without installing a global `kapso` binary, use:
 
 ```bash
-npm install -g @kapso/cli
-kapso login
-kapso status
+openclaw kapso-whatsapp cli login
+openclaw kapso-whatsapp cli status
 ```
+
+You can still install `@kapso/cli` globally if you want a standalone `kapso` command in your shell.
 
 After your OpenClaw gateway has a public URL, let the plugin resolve the number, register the webhook, and write OpenClaw config:
 
@@ -76,7 +77,7 @@ If you already know the Kapso/Meta number ID, replace the sender-number line wit
 Kapso/Meta phone_number_id: 1234567890
 ```
 
-If the Kapso CLI is not logged in, the agent may ask you to run `kapso login` once in the terminal. If it cannot discover the public HTTPS URL from the gateway or tunnel service, it should ask you for that URL rather than guessing.
+If the Kapso CLI is not logged in, the agent may ask you to run `openclaw kapso-whatsapp cli login` once in the terminal. If it cannot discover the public HTTPS URL from the gateway or tunnel service, it should ask you for that URL rather than guessing.
 
 ## Configure
 
@@ -169,14 +170,14 @@ Secret: same value as channels["kapso-whatsapp"].webhookSecret or KAPSO_WEBHOOK_
 Payload version: v2 recommended
 ```
 
-If you use the Kapso CLI, first authenticate and resolve the number:
+The Kapso CLI is bundled with the plugin. To run it through OpenClaw, first authenticate and resolve the number:
 
 ```bash
-kapso login
-kapso status
-kapso whatsapp numbers list --output json
-kapso whatsapp numbers resolve "+15551234567" --output json
-kapso whatsapp webhooks new \
+openclaw kapso-whatsapp cli login
+openclaw kapso-whatsapp cli status
+openclaw kapso-whatsapp cli whatsapp numbers list --output json
+openclaw kapso-whatsapp cli whatsapp numbers resolve "+15551234567" --output json
+openclaw kapso-whatsapp cli whatsapp webhooks new \
   --phone-number-id "1234567890" \
   --url "https://your-openclaw-host.example.com/kapso/webhook" \
   --event whatsapp.message.received \
@@ -184,7 +185,7 @@ kapso whatsapp webhooks new \
   --output json
 ```
 
-The plugin does not require the Kapso CLI, but the CLI is helpful for finding `phone_number_id`, checking project access, and confirming recent messages.
+The setup command also uses the bundled CLI internally for finding `phone_number_id`, checking project access, and registering webhooks. If the bundled CLI cannot be resolved for some reason, the plugin falls back to a `kapso` binary on `PATH`.
 
 ## Diagnostics
 

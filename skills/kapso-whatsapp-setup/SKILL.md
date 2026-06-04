@@ -5,17 +5,7 @@ metadata:
   {
     "openclaw":
       {
-        "requires": { "bins": ["openclaw"] },
-        "install":
-          [
-            {
-              "id": "kapso-cli",
-              "kind": "node",
-              "package": "@kapso/cli",
-              "bins": ["kapso"],
-              "label": "Install Kapso CLI (npm)"
-            }
-          ]
+        "requires": { "bins": ["openclaw"] }
       }
   }
 ---
@@ -31,7 +21,7 @@ Use this skill when the user wants to connect Kapso WhatsApp to OpenClaw, run th
 ```bash
 openclaw kapso-whatsapp doctor
 openclaw config get 'channels["kapso-whatsapp"]'
-command -v kapso && kapso status --output json
+openclaw kapso-whatsapp cli status --output json
 ```
 
 If the `kapso-whatsapp` command is missing, install and enable the plugin:
@@ -44,15 +34,14 @@ openclaw config set 'channels["kapso-whatsapp"].enabled' true --strict-json
 
 Preserve any existing `plugins.allow` entries instead of replacing unrelated trusted plugins.
 
-2. Confirm the Kapso CLI is available if number resolution or CLI webhook registration is needed:
+2. Confirm the Kapso CLI is authenticated if number resolution or CLI webhook registration is needed. The plugin bundles `@kapso/cli`; use the OpenClaw wrapper instead of asking the user to install a global CLI:
 
 ```bash
-npm install -g @kapso/cli
-kapso login
-kapso status --output json
+openclaw kapso-whatsapp cli login
+openclaw kapso-whatsapp cli status --output json
 ```
 
-If the CLI is not logged in and the user did not provide `phoneNumberId`, ask them to run `kapso login` or provide the Kapso/Meta `phone_number_id`.
+If the CLI is not logged in and the user did not provide `phoneNumberId`, ask them to run `openclaw kapso-whatsapp cli login` or provide the Kapso/Meta `phone_number_id`.
 
 3. Determine the public OpenClaw webhook URL. Prefer discovery before asking the user:
 
@@ -92,11 +81,11 @@ If the URL cannot be discovered with confidence, ask the user to paste the final
 4. Resolve the Kapso WhatsApp sender number and phone number ID. Do not assume the default outbound recipient is the Kapso sender number.
 
 ```bash
-kapso whatsapp numbers list --output json
-kapso whatsapp numbers resolve "+15551234567" --output json
+openclaw kapso-whatsapp cli whatsapp numbers list --output json
+openclaw kapso-whatsapp cli whatsapp numbers resolve "+15551234567" --output json
 ```
 
-Prefer an existing `channels["kapso-whatsapp"].phoneNumberId` or a user-provided `phoneNumberId` when available. Otherwise, use `kapso whatsapp numbers list --output json` to find available WhatsApp numbers. If there is exactly one active number, use it; if there are multiple, show the choices and ask the user which sender number to connect.
+Prefer an existing `channels["kapso-whatsapp"].phoneNumberId` or a user-provided `phoneNumberId` when available. Otherwise, use `openclaw kapso-whatsapp cli whatsapp numbers list --output json` to find available WhatsApp numbers. If there is exactly one active number, use it; if there are multiple, show the choices and ask the user which sender number to connect.
 
 5. Run the plugin setup command. If the user says their Kapso API key is already configured on the server, do not ask them to paste it into chat and do not print it back.
 
