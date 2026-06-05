@@ -27,6 +27,7 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.json",
     "clean": "rm -rf dist",
+    "postinstall": "node scripts/patch-openclaw-hono.mjs",
     "plugin:build": "npm run build && npm pack --dry-run",
     "plugin:validate": "npm run build && npm test && npm pack --dry-run",
     "test": "vitest run",
@@ -42,9 +43,12 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "openclaw": "2026.5.28",
+    "openclaw": "2026.6.1",
     "typescript": "^5.9.0",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "hono": "4.12.23"
   },
   "openclaw": {
     "extensions": [
@@ -71,7 +75,7 @@
       "pluginApi": ">=2026.5.27"
     },
     "build": {
-      "openclawVersion": "2026.5.28"
+      "openclawVersion": "2026.6.1"
     }
   }
 }
