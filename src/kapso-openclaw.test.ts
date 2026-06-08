@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { CHANNEL_ID } from "./constants.js";
 import { resolveKapsoAccount } from "./config.js";
+import { dispatchKapsoInboundEvent } from "./inbound.js";
 import { sendKapsoText } from "./outbound.js";
 import { normalizeWhatsAppTarget, whatsAppTargetsEquivalent } from "./targets.js";
 import {
@@ -130,6 +131,81 @@ describe("Kapso OpenClaw plugin", () => {
       conversationId: "conv_123",
       contactName: "Ada"
     });
+  });
+
+  it("prefers Kapso audio transcripts over OpenClaw audio transcription", async () => {
+    const normalized = normalizeKapsoWebhook({
+      event: KAPSO_MESSAGE_RECEIVED_EVENT,
+      phone_number_id: "pn_123",
+      conversation: {
+        id: "conv_123",
+        phone_number: "+1 (555) 123-4567"
+      },
+      message: {
+        id: "wamid.voice",
+        from: "15551234567",
+        type: "audio",
+        timestamp: "1710000000",
+        audio: {
+          id: "media_123"
+        },
+        kapso: {
+          has_media: true,
+          media_url: "https://api.kapso.ai/media/voice.ogg",
+          media_data: {
+            filename: "voice.ogg",
+            content_type: "audio/ogg"
+          },
+          content: "[Audio attached] (voice.ogg) URL: https://api.kapso.ai/media/voice.ogg\nTranscript: Hello, I need help with my order",
+          transcript: {
+            text: "Hello, I need help with my order"
+          }
+        }
+      }
+    }, {
+      eventName: KAPSO_MESSAGE_RECEIVED_EVENT
+    });
+
+    const event = normalized.events[0];
+    expect(event).toMatchObject({
+      text: "Hello, I need help with my order",
+      transcript: "Hello, I need help with my order",
+      transcriptSource: "kapso.transcript",
+      media: [{
+        url: "https://api.kapso.ai/media/voice.ogg",
+        id: "media_123",
+        contentType: "audio/ogg",
+        kind: "audio"
+      }]
+    });
+
+    const run = vi.fn(async (input) => {
+      const preflight = input.adapter.preflight();
+      expect(preflight.message.body).toBe("Hello, I need help with my order");
+      expect(preflight.media).toEqual([]);
+      expect(preflight.supplemental.untrustedContext[0]?.payload).toMatchObject({
+        transcriptSource: "kapso.transcript"
+      });
+    });
+
+    await dispatchKapsoInboundEvent({
+      api: {
+        runtime: {
+          channel: {
+            inbound: { run }
+          }
+        }
+      } as never,
+      account: {
+        accountId: "default",
+        enabled: true,
+        dmSecurity: "open",
+        allowFrom: []
+      } as never,
+      event: event!
+    });
+
+    expect(run).toHaveBeenCalledOnce();
   });
 
   it("sends outbound text through the Kapso WhatsApp SDK", async () => {

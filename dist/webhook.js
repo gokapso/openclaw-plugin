@@ -111,7 +111,8 @@ function normalizeKapsoInboundEvent(input) {
     if (!from)
         return undefined;
     const type = readRecordString(message, "type") ?? "unknown";
-    const text = extractMessageText(message, type);
+    const transcript = type === "audio" ? extractKapsoTranscript(message) : undefined;
+    const text = transcript?.text ?? extractMessageText(message, type);
     const media = extractMessageMedia(message, type);
     const messageId = readRecordString(message, "id") ?? `${from}:${Date.now()}`;
     const timestampMs = readTimestampMs(readRecordString(message, "timestamp"));
@@ -121,6 +122,8 @@ function normalizeKapsoInboundEvent(input) {
         type,
         from,
         text: text || fallbackTextForType(type, media),
+        transcript: transcript?.text,
+        transcriptSource: transcript?.source,
         timestampMs,
         phoneNumberId: input.phoneNumberId,
         displayPhoneNumber: input.displayPhoneNumber,
@@ -216,6 +219,40 @@ function extractMessageText(message, type) {
         return kapsoOrder;
     return "";
 }
+function extractKapsoTranscript(message) {
+    const kapso = readRecord(message, "kapso");
+    if (!kapso)
+        return undefined;
+    const transcriptRecord = readRecord(kapso, "transcript") ?? readRecord(kapso, "transcription");
+    const structuredTranscript = readRecordString(transcriptRecord, "text", "body", "content") ??
+        readRecordString(kapso, "transcript", "transcription");
+    if (structuredTranscript) {
+        return {
+            text: structuredTranscript,
+            source: "kapso.transcript"
+        };
+    }
+    const content = readKapsoContentString(kapso);
+    const contentTranscript = content ? extractTranscriptFromContent(content) : undefined;
+    if (!contentTranscript)
+        return undefined;
+    return {
+        text: contentTranscript,
+        source: "kapso.content"
+    };
+}
+function readKapsoContentString(kapso) {
+    const content = kapso.content;
+    if (typeof content === "string" && content.trim())
+        return content.trim();
+    const contentRecord = asRecord(content);
+    return readRecordString(contentRecord, "text", "body", "content");
+}
+function extractTranscriptFromContent(content) {
+    const match = content.match(/\bTranscript:\s*([\s\S]*)$/i);
+    const transcript = match?.[1]?.trim();
+    return transcript || undefined;
+}
 function extractMessageMedia(message, type) {
     const directMedia = readRecord(message, type);
     const kapso = readRecord(message, "kapso");
@@ -225,7 +262,9 @@ function extractMessageMedia(message, type) {
         readRecordString(directMedia, "link", "url");
     const id = readRecordString(mediaData, "id") ?? readRecordString(directMedia, "id");
     const contentType = readRecordString(mediaData, "mimeType", "mime_type") ??
-        readRecordString(directMedia, "mimeType", "mime_type");
+        readRecordString(mediaData, "contentType", "content_type") ??
+        readRecordString(directMedia, "mimeType", "mime_type") ??
+        readRecordString(directMedia, "contentType", "content_type");
     const kind = normalizeMediaKind(type, contentType);
     if (!url && !id && kind === "unknown")
         return [];

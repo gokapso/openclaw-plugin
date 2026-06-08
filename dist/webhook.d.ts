@@ -14,6 +14,8 @@ export type KapsoInboundEvent = {
     type: string;
     from: string;
     text: string;
+    transcript?: string;
+    transcriptSource?: "kapso.transcript" | "kapso.content";
     timestampMs?: number;
     phoneNumberId?: string;
     displayPhoneNumber?: string;

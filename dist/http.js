@@ -82,10 +82,14 @@ export async function handleKapsoWebhookRequest(params) {
 }
 function logWebhookDispatch(api, account, event) {
     const mediaSummary = summarizeMedia(event);
-    api.logger.info(`${CHANNEL_ID}: webhook dispatch account=${account.accountId} type=${event.type} media=${mediaSummary}`);
-    if (event.media.some((media) => media.id && !media.url)) {
+    const transcriptSummary = event.transcriptSource ? ` transcript=${event.transcriptSource}` : "";
+    api.logger.info(`${CHANNEL_ID}: webhook dispatch account=${account.accountId} type=${event.type} media=${mediaSummary}${transcriptSummary}`);
+    if (event.media.some((media) => media.id && !media.url && !hasKapsoTranscriptForAudio(event, media.kind))) {
         api.logger.warn(`${CHANNEL_ID}: inbound ${event.type} media included an id but no URL; the model cannot inspect the media until Kapso sends mediaUrl/downloadUrl or another transcription/download step resolves it`);
     }
+}
+function hasKapsoTranscriptForAudio(event, mediaKind) {
+    return Boolean(event.transcript && (event.type === "audio" || mediaKind === "audio"));
 }
 function summarizeMedia(event) {
     if (event.media.length === 0)

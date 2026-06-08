@@ -37,15 +37,7 @@ export async function dispatchKapsoInboundEvent(params: {
         return {
           ...(admission ? { admission } : {}),
           message: buildMessageFacts(event),
-          media: event.media.flatMap((media) => {
-            if (!media.url) return [];
-            return [{
-              url: media.url,
-              contentType: media.contentType,
-              kind: media.kind,
-              messageId: event.messageId
-            }];
-          }),
+          media: buildOpenClawMedia(event),
           supplemental: {
             untrustedContext: [{
               label: "Kapso webhook metadata",
@@ -55,7 +47,8 @@ export async function dispatchKapsoInboundEvent(params: {
                 conversationId: event.conversationId,
                 phoneNumberId: event.phoneNumberId,
                 displayPhoneNumber: event.displayPhoneNumber,
-                type: event.type
+                type: event.type,
+                transcriptSource: event.transcriptSource
               }
             }]
           }
@@ -117,22 +110,15 @@ export async function dispatchKapsoInboundEvent(params: {
             ...buildMessageFacts(event),
             ...preflight.message
           },
-          media: event.media.flatMap((media) => {
-            if (!media.url) return [];
-            return [{
-              url: media.url,
-              contentType: media.contentType,
-              kind: media.kind,
-              messageId: event.messageId
-            }];
-          }),
+          media: buildOpenClawMedia(event),
           supplemental: preflight.supplemental,
           extra: {
             kapso: {
               conversationId: event.conversationId,
               phoneNumberId: event.phoneNumberId,
               displayPhoneNumber: event.displayPhoneNumber,
-              type: event.type
+              type: event.type,
+              transcriptSource: event.transcriptSource
             }
           }
         });
@@ -186,8 +172,24 @@ function buildMessageFacts(event: KapsoInboundEvent) {
     commandBody: event.text,
     envelopeFrom: event.from,
     senderLabel: event.contactName ?? event.from,
-    preview: event.text.slice(0, 160)
+    preview: event.text.slice(0, 160),
+    transcript: event.transcript,
+    transcriptSource: event.transcriptSource
   };
+}
+
+function buildOpenClawMedia(event: KapsoInboundEvent) {
+  return event.media.flatMap((media) => {
+    if (!media.url) return [];
+    if (event.transcript && (event.type === "audio" || media.kind === "audio")) return [];
+
+    return [{
+      url: media.url,
+      contentType: media.contentType,
+      kind: media.kind,
+      messageId: event.messageId
+    }];
+  });
 }
 
 function resolveAdmission(account: ResolvedKapsoAccount, from: string) {
