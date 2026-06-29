@@ -6,7 +6,7 @@ import { CHANNEL_ID } from "./constants.js";
 import type { ResolvedKapsoAccount } from "./config.js";
 import { whatsAppTargetsEquivalent } from "./targets.js";
 import type { KapsoInboundEvent } from "./webhook.js";
-import { sendKapsoMedia, sendKapsoText, toOutboundDeliveryResult } from "./outbound.js";
+import { sendKapsoMedia, sendKapsoText, sendKapsoTypingIndicator, toOutboundDeliveryResult } from "./outbound.js";
 
 export async function dispatchKapsoInboundEvent(params: {
   api: OpenClawPluginApi;
@@ -14,6 +14,11 @@ export async function dispatchKapsoInboundEvent(params: {
   event: KapsoInboundEvent;
 }): Promise<void> {
   const { api, account, event } = params;
+
+  // Show a WhatsApp typing indicator (and mark the message read) as soon as the
+  // message arrives, so the user sees activity while the agent prepares a reply.
+  // Best-effort and fire-and-forget: it must never block or fail the inbound turn.
+  maybeSendKapsoTypingIndicator(params);
 
   await api.runtime.channel.inbound.run({
     channel: CHANNEL_ID,
@@ -189,6 +194,25 @@ function buildOpenClawMedia(event: KapsoInboundEvent) {
       kind: media.kind,
       messageId: event.messageId
     }];
+  });
+}
+
+function maybeSendKapsoTypingIndicator(params: {
+  api: OpenClawPluginApi;
+  account: ResolvedKapsoAccount;
+  event: KapsoInboundEvent;
+}): void {
+  const { api, account, event } = params;
+  if (!account.typingIndicator) return;
+  if (!event.messageId || !account.apiKey || !account.phoneNumberId) return;
+  if (resolveAdmission(account, event.from)) return;
+
+  void sendKapsoTypingIndicator({
+    cfg: api.config,
+    accountId: account.accountId,
+    messageId: event.messageId
+  }).catch((err: unknown) => {
+    api.logger.warn(`${CHANNEL_ID}: typing indicator failed: ${String(err)}`);
   });
 }
 
