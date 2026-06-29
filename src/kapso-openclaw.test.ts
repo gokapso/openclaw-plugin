@@ -4,7 +4,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { CHANNEL_ID } from "./constants.js";
 import { resolveKapsoAccount } from "./config.js";
 import { dispatchKapsoInboundEvent } from "./inbound.js";
-import { sendKapsoText } from "./outbound.js";
+import { sendKapsoText, sendKapsoTypingIndicator } from "./outbound.js";
 import { normalizeWhatsAppTarget, whatsAppTargetsEquivalent } from "./targets.js";
 import {
   KAPSO_MESSAGE_RECEIVED_EVENT,
@@ -33,6 +33,21 @@ describe("Kapso OpenClaw plugin", () => {
     expect(account.phoneNumberId).toBe("pn_123");
     expect(account.baseUrl).toBe("https://api.example.test/meta/whatsapp");
     expect(account.webhookPath).toBe("/kapso/webhook");
+    expect(account.typingIndicator).toBe(true);
+  });
+
+  it("allows disabling the typing indicator via config", () => {
+    const cfg = {
+      channels: {
+        [CHANNEL_ID]: {
+          apiKey: "kapso_test",
+          phoneNumberId: "pn_123",
+          typingIndicator: false
+        }
+      }
+    } as unknown as OpenClawConfig;
+
+    expect(resolveKapsoAccount(cfg).typingIndicator).toBe(false);
   });
 
   it("prefers account config over env defaults", () => {
@@ -240,6 +255,33 @@ describe("Kapso OpenClaw plugin", () => {
       to: "+15551234567",
       body: "hello from OpenClaw",
       contextMessageId: "wamid.inbound"
+    });
+  });
+
+  it("marks the inbound message read and requests a typing indicator", async () => {
+    const markRead = vi.fn().mockResolvedValue({ success: true });
+    const clientFactory = vi.fn().mockResolvedValue({
+      messages: { markRead }
+    });
+    const cfg = {
+      channels: {
+        [CHANNEL_ID]: {
+          apiKey: "kapso_test",
+          phoneNumberId: "pn_123"
+        }
+      }
+    } as unknown as OpenClawConfig;
+
+    await sendKapsoTypingIndicator({
+      cfg,
+      messageId: "wamid.inbound",
+      clientFactory
+    });
+
+    expect(markRead).toHaveBeenCalledWith({
+      phoneNumberId: "pn_123",
+      messageId: "wamid.inbound",
+      typingIndicator: { type: "text" }
     });
   });
 });

@@ -148,7 +148,12 @@ openclaw config set 'channels["kapso-whatsapp"].webhookPath' '"/kapso/webhook"' 
 openclaw config set 'channels["kapso-whatsapp"].defaultTo' '"+15551234567"' --strict-json
 openclaw config set 'channels["kapso-whatsapp"].dmSecurity' '"allowlist"' --strict-json
 openclaw config set 'channels["kapso-whatsapp"].allowFrom' '["+15551234567","15551234567"]' --strict-json
+openclaw config set 'channels["kapso-whatsapp"].typingIndicator' 'false' --strict-json
 ```
+
+By default, when a message arrives the plugin marks it as read and shows a WhatsApp
+typing indicator while the agent prepares its reply (dismissed when the reply is sent,
+or after ~25s). Set `typingIndicator` to `false` to disable this.
 
 Kapso webhook sender IDs often arrive as digits-only values such as `15551234567`, while users naturally type E.164 values such as `+15551234567`. Current plugin versions treat those two forms as the same sender for allowlist checks. Including both forms is harmless and helps when testing older installs or raw config edits.
 

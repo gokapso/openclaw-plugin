@@ -12,6 +12,7 @@ export type KapsoWhatsappAccountConfig = {
     defaultTo?: string;
     dmSecurity?: KapsoDmPolicy;
     allowFrom?: string[];
+    typingIndicator?: boolean;
 };
 export type KapsoWhatsappChannelConfig = KapsoWhatsappAccountConfig & {
     defaultAccountId?: string;
@@ -29,6 +30,7 @@ export type ResolvedKapsoAccount = {
     defaultTo?: string;
     dmSecurity: KapsoDmPolicy;
     allowFrom: string[];
+    typingIndicator: boolean;
     configured: boolean;
     envBacked: {
         apiKey: boolean;
