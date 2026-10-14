@@ -1,6 +1,6 @@
 {
   "name": "@kapso/openclaw-whatsapp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Official Kapso WhatsApp channel plugin for OpenClaw.",
   "type": "module",
   "private": false,

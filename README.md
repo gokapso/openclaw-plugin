@@ -31,6 +31,42 @@ openclaw kapso-whatsapp cli status
 
 You can still install `@kapso/cli` globally if you want a standalone `kapso` command in your shell.
 
+### Upgrading an existing Git installation
+
+Version **0.1.5** adds the separate `dist/doctor-contract-api.js` artifact required to inspect deferred Kapso config/state upgrades on OpenClaw 2026.10.3. Version 0.1.4 does not provide that artifact. The `openclaw kapso-whatsapp doctor` command checks credentials and remote webhooks; it is separate from OpenClaw's lifecycle Doctor contract.
+
+The contract preserves the existing config and declares no plugin-owned state migrations. Keep the plugin/channel ID `kapso-whatsapp`: API keys, webhook secrets, account settings, allowlists, and webhook paths stay under `channels["kapso-whatsapp"]`. Webhook registrations stay in Kapso, and OpenClaw continues to own session state.
+
+After 0.1.5 is published to ClawHub, migrate the managed Git installation in place:
+
+1. Run commands as the Gateway service user, with the same `OPENCLAW_STATE_DIR`, `OPENCLAW_CONFIG_PATH`, and secret-bearing environment used by the service. Record `openclaw gateway status --deep` and `openclaw kapso-whatsapp doctor --json` before changing anything. Preserve any systemd user-service environment files or overrides separately.
+2. Stop the Gateway and make a full backup of the existing state, config (including any includes), credentials, and agent/session data. With a version that supports it, use `openclaw backup create --verify`; retain a recovery point from before the core upgrade as well.
+3. Upgrade core to OpenClaw 2026.10.3 if needed. If the update leaves Kapso's data/settings upgrade unfinished, install the fixed package on the new host. Keep the Gateway stopped during package repair, and run only one install/update/Doctor process at a time:
+
+   ```bash
+   openclaw plugins install clawhub:@kapso/openclaw-whatsapp@0.1.5 \
+     --accept-capabilities --force --no-enable
+   ```
+
+   `--force` replaces the managed package and records the ClawHub source under the same plugin ID. `--no-enable` preserves the existing activation policy, including explicit disables. Avoid uninstalling the plugin or rerunning setup with `--register-webhook`: neither is needed to change installation source.
+4. After the core upgrade and fixed plugin installation, complete pending repairs and check the installed version and runtime:
+
+   ```bash
+   openclaw doctor --fix
+   openclaw plugins inspect kapso-whatsapp --runtime --json
+   openclaw kapso-whatsapp doctor --json
+   ```
+
+5. Start the Gateway through its existing service manager, check `openclaw gateway status`, and test an inbound message and reply from an already allowed sender. Confirm the existing webhook URL and allowlist count match the pre-upgrade report.
+
+A local build of this fix also includes the compiled Doctor artifact and can be installed as a package archive for testing before publication.
+
+#### Hardlinked esbuild files or SQLite lifecycle locks
+
+`FsSafeError: Refusing to move hardlinked file` occurs in the host's filesystem safety checks before the Doctor artifact runs. After backing up and stopping the Gateway, replace only the reported hardlinked dependency files with independent copies that preserve their contents and executable permissions, then retry. Do not remove the state directory or disable filesystem safety checks. ClawHub packages contain the compiled plugin, so migration does not need a new Git development checkout or plugin build on the Gateway host.
+
+`operation=plugins.lifecycle.lease ... failureKind=lock-contention` means OpenClaw could not acquire its lifecycle database lock. Let an active updater finish; stop the Gateway and any overlapping install/update/Doctor commands before retrying once. Do not delete SQLite databases, WAL files, or lock records. If contention persists with no other process running, retain the logs and report it to OpenClaw; the plugin's Doctor contract cannot repair a host database lock.
+
 ## Quickstart
 
 Recommended setup after your OpenClaw gateway has a public URL:
