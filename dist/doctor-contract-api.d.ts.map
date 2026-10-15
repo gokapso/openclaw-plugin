@@ -1,0 +1,1 @@
+{"version":3,"file":"doctor-contract-api.d.ts","sourceRoot":"","sources":["../src/doctor-contract-api.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,kCAAkC,CAAC;AAEvE;;;GAGG;AACH,wBAAgB,4BAA4B,CAAC,EAAE,GAAG,EAAE,EAAE;IAAE,GAAG,EAAE,cAAc,CAAA;CAAE,GAAG;IAC9E,MAAM,EAAE,cAAc,CAAC;IACvB,OAAO,EAAE,MAAM,EAAE,CAAC;CACnB,CAEA;AAID,eAAO,MAAM,eAAe,SAAK,CAAC"}

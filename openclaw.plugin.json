@@ -9,7 +9,11 @@
   ],
   "name": "Kapso WhatsApp",
   "description": "Official Kapso WhatsApp channel plugin for OpenClaw.",
-  "version": "0.1.4",
+  "version": "0.1.5",
+  "doctorContract": {
+    "configRepair": true,
+    "stateMigrations": []
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
