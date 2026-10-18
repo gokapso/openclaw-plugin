@@ -15,6 +15,7 @@ export const kapsoChannelConfigSchema = buildJsonChannelConfigSchema({
         defaultTo: stringOrNumberSchema(),
         defaultAccountId: { type: "string" },
         dmSecurity: { enum: ["open", "allowlist", "disabled"] },
+        typingIndicator: { type: "boolean" },
         allowFrom: {
             type: "array",
             items: { type: "string" }
@@ -32,7 +33,8 @@ export const kapsoChannelConfigSchema = buildJsonChannelConfigSchema({
         baseUrl: { label: "Kapso proxy URL", advanced: true },
         webhookPath: { label: "Webhook path", advanced: true },
         defaultTo: { label: "Default WhatsApp recipient" },
-        allowFrom: { label: "Allowed WhatsApp senders" }
+        allowFrom: { label: "Allowed WhatsApp senders" },
+        typingIndicator: { label: "Show typing indicator while replying", advanced: true }
     }
 });
 export function getKapsoChannelSection(cfg) {
@@ -86,6 +88,7 @@ export function resolveKapsoAccount(cfg, accountId, env = process.env) {
         defaultTo,
         dmSecurity: normalizeDmPolicy(merged.dmSecurity),
         allowFrom: normalizeAllowFrom(merged.allowFrom),
+        typingIndicator: merged.typingIndicator !== false,
         configured: Boolean(apiKey && phoneNumberId),
         envBacked: {
             apiKey: !merged.apiKey && Boolean(env.KAPSO_API_KEY),
@@ -168,6 +171,9 @@ export function applyKapsoAccountConfig(params) {
     if (typeof input.enabled === "boolean") {
         next.enabled = input.enabled;
     }
+    if (typeof input.typingIndicator === "boolean") {
+        next.typingIndicator = input.typingIndicator;
+    }
     section.accounts = {
         ...section.accounts,
         [accountId]: next
@@ -223,7 +229,8 @@ function normalizeAccountConfig(raw) {
         webhookPath: readString(raw.webhookPath),
         defaultTo: readStringOrNumber(raw.defaultTo),
         dmSecurity: normalizeDmPolicy(raw.dmSecurity ?? raw.dmPolicy),
-        allowFrom: Array.isArray(raw.allowFrom) ? raw.allowFrom.map(String) : undefined
+        allowFrom: Array.isArray(raw.allowFrom) ? raw.allowFrom.map(String) : undefined,
+        typingIndicator: typeof raw.typingIndicator === "boolean" ? raw.typingIndicator : undefined
     };
 }
 function normalizeAccounts(raw) {

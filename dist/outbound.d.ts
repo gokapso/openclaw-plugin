@@ -20,6 +20,16 @@ export declare function sendKapsoText(params: {
     text: string;
     replyToId?: string | null;
 } & KapsoSendOptions): Promise<KapsoSendResult>;
+/**
+ * Marks an inbound message as read and shows a WhatsApp typing indicator while the
+ * agent prepares a reply. The indicator is dismissed when the reply is sent or after
+ * ~25s (Meta's limit). Intended to be called best-effort/fire-and-forget on inbound.
+ */
+export declare function sendKapsoTypingIndicator(params: {
+    cfg: OpenClawConfig;
+    accountId?: string | null;
+    messageId: string;
+} & KapsoSendOptions): Promise<void>;
 export declare function sendKapsoMedia(params: {
     cfg: OpenClawConfig;
     accountId?: string | null;

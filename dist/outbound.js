@@ -19,6 +19,20 @@ export async function sendKapsoText(params) {
         to
     };
 }
+/**
+ * Marks an inbound message as read and shows a WhatsApp typing indicator while the
+ * agent prepares a reply. The indicator is dismissed when the reply is sent or after
+ * ~25s (Meta's limit). Intended to be called best-effort/fire-and-forget on inbound.
+ */
+export async function sendKapsoTypingIndicator(params) {
+    const account = requireOutboundAccount(resolveKapsoAccount(params.cfg, params.accountId));
+    const client = await (params.clientFactory ?? createKapsoClient)(account, params.signal);
+    await client.messages.markRead({
+        phoneNumberId: account.phoneNumberId,
+        messageId: params.messageId,
+        typingIndicator: { type: "text" }
+    });
+}
 export async function sendKapsoMedia(params) {
     const account = requireOutboundAccount(resolveKapsoAccount(params.cfg, params.accountId));
     const to = requireTarget(params.to);
