@@ -12,7 +12,8 @@ export const kapsoWhatsappPlugin = {
         docsPath: "https://docs.kapso.ai",
         docsLabel: "Kapso docs",
         blurb: "Send and receive WhatsApp messages through Kapso.",
-        aliases: ["kapso", "whatsapp", "wa"],
+        // Generic WhatsApp names stay with OpenClaw's own WhatsApp channel; an alias here can shadow it.
+        aliases: ["kapso"],
         markdownCapable: true,
         showConfigured: true,
         showInSetup: true,
