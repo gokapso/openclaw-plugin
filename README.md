@@ -342,6 +342,8 @@ Healthy channel logs include `type=audio` and `transcript=kapso.transcript`. If 
 
 ## Channel Targets
 
+Select this channel as `kapso-whatsapp` or its alias `kapso`, for example `openclaw message send --channel kapso-whatsapp`. The generic channel names `whatsapp` and `wa` do not select Kapso, so Kapso cannot take messages meant for OpenClaw's own WhatsApp channel when both run in one gateway. This also applies when Kapso is the only WhatsApp channel installed. If a config, scheduled delivery, or script selects `--channel whatsapp` or `wa` to send through Kapso, change it to `kapso-whatsapp`.
+
 The plugin accepts WhatsApp phone-number targets with these prefixes:
 
 ```text
@@ -351,7 +353,7 @@ whatsapp:+15551234567
 wa:+15551234567
 ```
 
-Plain E.164 or digits-only numbers are also accepted.
+Plain E.164 or digits-only numbers are also accepted. These prefixes are phone-number formats, not channel names. When the same gateway also runs OpenClaw's WhatsApp channel, OpenClaw reserves the `whatsapp:` prefix for that channel, so use `kapso:` or a plain number for Kapso there.
 
 ## Troubleshooting
 

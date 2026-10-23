@@ -65,9 +65,7 @@
       "selectionLabel": "WhatsApp via Kapso",
       "docsPath": "https://docs.kapso.ai",
       "aliases": [
-        "kapso",
-        "whatsapp",
-        "wa"
+        "kapso"
       ],
       "blurb": "Send and receive WhatsApp messages through Kapso."
     },
