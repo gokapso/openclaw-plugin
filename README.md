@@ -413,6 +413,22 @@ For local `faster-whisper`, test the wrapper directly:
 - [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [NVIDIA Speech NIM ASR overview](https://docs.nvidia.com/nim/speech/latest/asr/index.html)
 
+## Development and dependency updates
+
+Use Node.js 24, npm and Bun 1.3.14 locally. `package-lock.json` is the canonical lockfile; use `npm ci` for a clean, frozen install and Bun to run checks:
+
+```bash
+npm ci
+bun run typecheck
+bun run build
+bun run test
+npm pack --dry-run
+```
+
+Keep direct runtime, development and optional dependencies at exact versions. `.npmrc` makes npm save exact versions by default. Update dependencies explicitly in a PR with the manifest, lockfile and passing checks; use `npm install <package>@<version>` (with `--save-dev` or `--save-optional` as appropriate). Do not generate a second lockfile with another package manager. Keep peer dependencies and engines as compatibility ranges, and preserve the Hono security override and postinstall patch.
+
+Exact direct versions do not freeze transitive dependencies for npm consumers. Security fixes remain separate work: the CLI path traversal fix requires a follow-up dependency update after the corrected CLI is released; pinning the current CLI does not resolve it.
+
 ## Publishing
 
 Before publishing to ClawHub:

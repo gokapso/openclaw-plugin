@@ -22,7 +22,8 @@
     "skills",
     "openclaw.plugin.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts/patch-openclaw-hono.mjs"
   ],
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.json",
@@ -37,15 +38,15 @@
     "openclaw": ">=2026.5.27"
   },
   "dependencies": {
-    "@kapso/cli": "^0.16.0",
-    "@kapso/whatsapp-cloud-api": "^0.2.1",
-    "typebox": "^1.1.38"
+    "@kapso/cli": "0.16.0",
+    "@kapso/whatsapp-cloud-api": "0.2.1",
+    "typebox": "1.2.1"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "24.12.4",
     "openclaw": "2026.6.1",
-    "typescript": "^5.9.0",
-    "vitest": "^4.1.8"
+    "typescript": "5.9.3",
+    "vitest": "4.1.8"
   },
   "overrides": {
     "hono": "4.12.23"
